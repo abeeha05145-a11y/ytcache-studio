@@ -10,16 +10,27 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import os
 
 def get_cookie_opts() -> Dict[str, Any]:
-    """Detect cookies.txt file or YOUTUBE_COOKIES env var to bypass cloud datacenter IP blocks."""
-    candidates = [
-        Path("cookies.txt"),
-        Path("/app/cookies.txt"),
-        Path(__file__).resolve().parent.parent / "cookies.txt",
-        Path(__file__).resolve().parent / "cookies.txt",
+    """Detect cookies.txt / www.youtube.com_cookies.txt or YOUTUBE_COOKIES env var."""
+    # Check common cookie filenames in root, app, and current directory
+    search_dirs = [Path("."), Path("/app"), Path(__file__).resolve().parent.parent, Path(__file__).resolve().parent]
+    cookie_names = [
+        "www.youtube.com_cookies.txt",
+        "cookies.txt",
+        "youtube_cookies.txt",
+        "yt_cookies.txt"
     ]
-    for p in candidates:
-        if p.exists() and p.stat().st_size > 0:
-            return {'cookiefile': str(p.resolve())}
+    for d in search_dirs:
+        for name in cookie_names:
+            p = d / name
+            if p.exists() and p.stat().st_size > 0:
+                return {'cookiefile': str(p.resolve())}
+        # Also check any .txt file with 'cookie' in the name
+        try:
+            for p in d.glob("*cookie*.txt"):
+                if p.exists() and p.stat().st_size > 0:
+                    return {'cookiefile': str(p.resolve())}
+        except Exception:
+            pass
     
     env_cookies = os.getenv("YOUTUBE_COOKIES")
     if env_cookies and len(env_cookies.strip()) > 10:
