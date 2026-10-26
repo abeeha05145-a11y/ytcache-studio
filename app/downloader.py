@@ -58,7 +58,9 @@ def get_cookie_opts() -> Dict[str, Any]:
     if env_cookies and len(env_cookies.strip()) > 10:
         tmp_path = DOWNLOAD_DIR / "yt_cookies.txt"
         try:
-            tmp_path.write_text(env_cookies.strip(), encoding="utf-8")
+            # Handle both raw newlines and escaped \n / \t from env var inputs
+            content = env_cookies.strip().replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '\t')
+            tmp_path.write_text(content, encoding="utf-8")
             return {'cookiefile': str(tmp_path.resolve())}
         except Exception:
             pass
@@ -82,14 +84,22 @@ def extract_video_info(url: str) -> Dict[str, Any]:
     Extract video metadata and categorize available resolutions without downloading.
     """
     clean_url = normalize_youtube_url(url)
+    cookie_opts = get_cookie_opts()
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
         'skip_download': True,
-        'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
-    ydl_opts.update(get_cookie_opts())
+    if cookie_opts:
+        ydl_opts.update(cookie_opts)
+        ydl_opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['web', 'android', 'ios'],
+            }
+        }
+    else:
+        ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -320,6 +330,7 @@ def start_download_task(
     # Base output filename template with job_id prefix to prevent collisions
     out_template = str(DOWNLOAD_DIR / f"{job_id}_%(title).80B.%(ext)s")
 
+    cookie_opts = get_cookie_opts()
     ydl_opts: Dict[str, Any] = {
         'outtmpl': out_template,
         'progress_hooks': [progress_hook],
@@ -327,9 +338,16 @@ def start_download_task(
         'quiet': True,
         'no_warnings': True,
         'restrictfilenames': True,
-        'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
-    ydl_opts.update(get_cookie_opts())
+    if cookie_opts:
+        ydl_opts.update(cookie_opts)
+        ydl_opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['web', 'android', 'ios'],
+            }
+        }
+    else:
+        ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
     try:
         if download_type == 'audio':

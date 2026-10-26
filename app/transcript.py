@@ -25,7 +25,8 @@ def get_cookie_opts() -> Dict[str, Any]:
     if env_cookies and len(env_cookies.strip()) > 10:
         tmp_path = DOWNLOAD_DIR / "yt_cookies.txt"
         try:
-            tmp_path.write_text(env_cookies.strip(), encoding="utf-8")
+            content = env_cookies.strip().replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '\t')
+            tmp_path.write_text(content, encoding="utf-8")
             return {'cookiefile': str(tmp_path.resolve())}
         except Exception:
             pass
@@ -162,6 +163,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
 
     # METHOD 1: Fast yt-dlp metadata caption download (skip_download=True, < 1 sec, zero media download)
     try:
+        cookie_opts = get_cookie_opts()
         ydl_opts = {
             'skip_download': True,
             'writesubtitles': True,
@@ -170,14 +172,21 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
             'outtmpl': str(temp_prefix) + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
-            'extractor_args': {
+        }
+        if cookie_opts:
+            ydl_opts.update(cookie_opts)
+            ydl_opts['extractor_args'] = {
+                'youtube': {
+                    'player_client': ['web', 'android', 'ios'],
+                }
+            }
+        else:
+            ydl_opts['extractor_args'] = {
                 'youtube': {
                     'player_client': ['android', 'ios'],
                     'player_skip': ['webpage', 'configs'],
                 }
             }
-        }
-        ydl_opts.update(get_cookie_opts())
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
             video_title = info.get('title', 'YouTube Video')
