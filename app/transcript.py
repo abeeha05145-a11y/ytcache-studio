@@ -7,6 +7,29 @@ import requests
 import yt_dlp
 CHROME_TARGET = None
 from youtube_transcript_api import YouTubeTranscriptApi
+import os
+
+def get_cookie_opts() -> Dict[str, Any]:
+    """Detect cookies.txt file or YOUTUBE_COOKIES env var to bypass cloud datacenter IP blocks."""
+    candidates = [
+        Path("cookies.txt"),
+        Path("/app/cookies.txt"),
+        Path(__file__).resolve().parent.parent / "cookies.txt",
+        Path(__file__).resolve().parent / "cookies.txt",
+    ]
+    for p in candidates:
+        if p.exists() and p.stat().st_size > 0:
+            return {'cookiefile': str(p.resolve())}
+    
+    env_cookies = os.getenv("YOUTUBE_COOKIES")
+    if env_cookies and len(env_cookies.strip()) > 10:
+        tmp_path = DOWNLOAD_DIR / "yt_cookies.txt"
+        try:
+            tmp_path.write_text(env_cookies.strip(), encoding="utf-8")
+            return {'cookiefile': str(tmp_path.resolve())}
+        except Exception:
+            pass
+    return {}
 
 from app.config import DOWNLOAD_DIR
 
@@ -154,6 +177,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                 }
             }
         }
+        ydl_opts.update(get_cookie_opts())
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
             video_title = info.get('title', 'YouTube Video')

@@ -42,6 +42,28 @@ YOUTUBE_EXTRACTOR_ARGS = {
     }
 }
 
+def get_cookie_opts() -> Dict[str, Any]:
+    """Detect cookies.txt file or YOUTUBE_COOKIES env var to bypass cloud datacenter IP blocks."""
+    candidates = [
+        Path("cookies.txt"),
+        Path("/app/cookies.txt"),
+        Path(__file__).resolve().parent.parent / "cookies.txt",
+        Path(__file__).resolve().parent / "cookies.txt",
+    ]
+    for p in candidates:
+        if p.exists() and p.stat().st_size > 0:
+            return {'cookiefile': str(p.resolve())}
+    
+    env_cookies = os.getenv("YOUTUBE_COOKIES")
+    if env_cookies and len(env_cookies.strip()) > 10:
+        tmp_path = DOWNLOAD_DIR / "yt_cookies.txt"
+        try:
+            tmp_path.write_text(env_cookies.strip(), encoding="utf-8")
+            return {'cookiefile': str(tmp_path.resolve())}
+        except Exception:
+            pass
+    return {}
+
 def normalize_youtube_url(url: str) -> str:
     """Normalize YouTube shorts, mobile, and share URLs into standard watch URLs."""
     if not url:
@@ -67,6 +89,7 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         'skip_download': True,
         'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
+    ydl_opts.update(get_cookie_opts())
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -306,6 +329,7 @@ def start_download_task(
         'restrictfilenames': True,
         'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
+    ydl_opts.update(get_cookie_opts())
 
     try:
         if download_type == 'audio':
