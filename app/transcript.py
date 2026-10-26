@@ -5,11 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import requests
 import yt_dlp
-try:
-    from yt_dlp.networking.impersonate import ImpersonateTarget
-    CHROME_TARGET = ImpersonateTarget.from_str('chrome')
-except Exception:
-    CHROME_TARGET = None
+CHROME_TARGET = None
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.config import DOWNLOAD_DIR
@@ -153,13 +149,11 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
             'no_warnings': True,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'ios', 'web'],
+                    'player_client': ['android', 'ios'],
                     'player_skip': ['webpage', 'configs'],
                 }
             }
         }
-        if CHROME_TARGET:
-            ydl_opts['impersonate'] = CHROME_TARGET
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
             video_title = info.get('title', 'YouTube Video')

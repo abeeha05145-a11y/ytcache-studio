@@ -6,11 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import yt_dlp
-try:
-    from yt_dlp.networking.impersonate import ImpersonateTarget
-    CHROME_TARGET = ImpersonateTarget.from_str('chrome')
-except Exception:
-    CHROME_TARGET = None
+CHROME_TARGET = None
 
 from app.config import DOWNLOAD_DIR
 
@@ -38,12 +34,22 @@ def format_duration(seconds: Optional[int]) -> str:
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
+# Android and iOS mobile clients avoid datacenter / cloud IP bot blocks
 YOUTUBE_EXTRACTOR_ARGS = {
     'youtube': {
-        'player_client': ['android', 'ios', 'web'],
+        'player_client': ['android', 'ios'],
         'player_skip': ['webpage', 'configs'],
     }
 }
+
+def normalize_youtube_url(url: str) -> str:
+    """Normalize YouTube shorts, mobile, and share URLs into standard watch URLs."""
+    if not url:
+        return url
+    m = re.search(r'(?:v=|\/shorts\/|\/v\/|youtu\.be\/)([a-zA-Z0-9_-]{11})', url)
+    if m:
+        return f"https://www.youtube.com/watch?v={m.group(1)}"
+    return url.strip()
 
 def clean_filename(name: str) -> str:
     # Remove characters not safe for Windows / Linux file names
@@ -53,6 +59,7 @@ def extract_video_info(url: str) -> Dict[str, Any]:
     """
     Extract video metadata and categorize available resolutions without downloading.
     """
+    clean_url = normalize_youtube_url(url)
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -60,12 +67,10 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         'skip_download': True,
         'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
-    if CHROME_TARGET:
-        ydl_opts['impersonate'] = CHROME_TARGET
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(clean_url, download=False)
         except yt_dlp.utils.DownloadError as e:
             err_msg = str(e)
             if "Private video" in err_msg:
@@ -287,6 +292,8 @@ def start_download_task(
             job['percent'] = 100.0
             job['message'] = "Finalizing file..."
 
+    clean_url = normalize_youtube_url(url)
+
     # Base output filename template with job_id prefix to prevent collisions
     out_template = str(DOWNLOAD_DIR / f"{job_id}_%(title).80B.%(ext)s")
 
@@ -299,8 +306,6 @@ def start_download_task(
         'restrictfilenames': True,
         'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
-    if CHROME_TARGET:
-        ydl_opts['impersonate'] = CHROME_TARGET
 
     try:
         if download_type == 'audio':
@@ -360,7 +365,7 @@ def start_download_task(
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             job['message'] = "Contacting YouTube servers..."
-            info = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(clean_url, download=True)
             
             # Find the actual generated file on disk
             # Pattern: {DOWNLOAD_DIR}/{job_id}_*
