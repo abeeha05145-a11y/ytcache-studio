@@ -1,0 +1,9 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+yt-dlp>=2026.10.0
+aiofiles>=24.1.0
+python-multipart>=0.0.12
+requests>=2.31.0
+deep-translator>=1.11.4
+youtube-transcript-api>=1.2.0
+curl_cffi>=0.10.0,<=0.16.0

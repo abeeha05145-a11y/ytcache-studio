@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  yt-downloader:
+    build: .
+    container_name: yt_downloader_pro
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - PYTHONUNBUFFERED=1
