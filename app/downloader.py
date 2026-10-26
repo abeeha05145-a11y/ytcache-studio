@@ -38,6 +38,13 @@ def format_duration(seconds: Optional[int]) -> str:
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
+YOUTUBE_EXTRACTOR_ARGS = {
+    'youtube': {
+        'player_client': ['android', 'ios', 'web'],
+        'player_skip': ['webpage', 'configs'],
+    }
+}
+
 def clean_filename(name: str) -> str:
     # Remove characters not safe for Windows / Linux file names
     return re.sub(r'[\\/*?:"<>|]', "", name).strip()
@@ -51,6 +58,7 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         'no_warnings': True,
         'extract_flat': False,
         'skip_download': True,
+        'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
     if CHROME_TARGET:
         ydl_opts['impersonate'] = CHROME_TARGET
@@ -171,6 +179,28 @@ def extract_video_info(url: str) -> Dict[str, Any]:
             })
             seen_heights.add(target_h)
 
+        # Fallback for vertical videos (Shorts) or non-standard resolutions
+        if not available_videos:
+            for f in formats:
+                if f.get('vcodec') != 'none':
+                    h = f.get('height') or f.get('width') or 360
+                    display_res = f"{min(f.get('height', h), f.get('width', h))}p" if (f.get('height') and f.get('width')) else f"{h}p"
+                    needs_merge = f.get('acodec') == 'none'
+                    v_size = f.get('filesize') or f.get('filesize_approx')
+                    tot_size = (v_size + best_audio_size) if (needs_merge and v_size and best_audio_size) else v_size
+                    available_videos.append({
+                        "format_id": f.get('format_id') or "best",
+                        "resolution": display_res,
+                        "height": h,
+                        "name": f"HD Video ({display_res})" if h >= 720 else f"Standard Video ({display_res})",
+                        "badge": "HD" if h >= 720 else "SD",
+                        "fps": f.get('fps') or 30,
+                        "ext": f.get('ext') or "mp4",
+                        "needs_merge": needs_merge,
+                        "estimated_size": format_bytes(tot_size),
+                        "approx_bytes": tot_size or 0
+                    })
+
         # Audio choices
         available_audios = [
             {
@@ -267,6 +297,7 @@ def start_download_task(
         'quiet': True,
         'no_warnings': True,
         'restrictfilenames': True,
+        'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
     }
     if CHROME_TARGET:
         ydl_opts['impersonate'] = CHROME_TARGET

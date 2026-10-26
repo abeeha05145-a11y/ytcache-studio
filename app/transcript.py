@@ -151,6 +151,12 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
             'outtmpl': str(temp_prefix) + '.%(ext)s',
             'quiet': True,
             'no_warnings': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web'],
+                    'player_skip': ['webpage', 'configs'],
+                }
+            }
         }
         if CHROME_TARGET:
             ydl_opts['impersonate'] = CHROME_TARGET
