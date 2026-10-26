@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="ytc-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="50%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <filter id="ytc-logo-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#00f2fe" flood-opacity="0.4" />
+    </filter>
+  </defs>
+  <!-- Rounded Squircle Base matching User's Logo -->
+  <rect x="8" y="8" width="84" height="84" rx="24" fill="url(#ytc-logo-grad)" filter="url(#ytc-logo-glow)" />
+  <!-- Clean High-Resolution White Play Icon -->
+  <polygon points="40,30 72,50 40,70" fill="#ffffff" />
+</svg>

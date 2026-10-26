@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YTCache Studio - 4K Video Downloader & Transcript Generator</title>
+  <meta name="description" content="Next-generation YouTube utility platform: Download pristine 4K/1080p videos or instantly extract transcripts with real-time multi-language translation.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Favicon Icons -->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=15.0">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/favicon.svg?v=15.0">
+
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Three.js CDN for Interactive 3D Background -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css?v=15.0">
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen flex flex-col transition-colors duration-300 antialiased selection:bg-indigo-500 selection:text-white relative overflow-x-hidden">
+
+  <!-- Interactive 3D WebGL Canvas -->
+  <canvas id="bg-3d-canvas"></canvas>
+
+  <!-- Ambient Glow Behind 3D Scene -->
+  <div class="ambient-glow -top-32 left-1/4 w-[600px] h-[350px] bg-indigo-500/20 dark:bg-indigo-600/15"></div>
+  <div class="ambient-glow top-40 right-1/4 w-[500px] h-[300px] bg-pink-500/20 dark:bg-purple-600/15"></div>
+
+  <!-- Header Navigation -->
+  <header class="w-full border-b border-slate-200/90 dark:border-slate-800/80 backdrop-blur-xl sticky top-0 z-40 bg-white/80 dark:bg-slate-950/75 transition-colors shadow-sm dark:shadow-none">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="#" class="flex items-center space-x-3 group select-none">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30 group-hover:scale-105 group-hover:rotate-3 transition-all duration-300 flex-shrink-0">
+          <i class="fa-solid fa-play text-white text-base ml-0.5"></i>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xl font-bold tracking-wider bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 dark:from-cyan-400 dark:to-blue-500 bg-clip-text text-transparent">
+            YTCache Studio
+          </span>
+          <span class="hidden sm:inline-block text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30">
+            PRO EDITION
+          </span>
+        </div>
+      </a>
+
+      <!-- Right Header Controls -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <!-- Live Status Pill -->
+        <div class="hidden sm:flex items-center gap-2 text-xs px-3.5 py-1.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-bold shadow-sm">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span>4K Core &bull; Fast API Active</span>
+        </div>
+
+        <!-- Dark/Light Theme Toggle -->
+        <button id="theme-toggle" class="btn-ripple btn-light-ripple w-10 h-10 rounded-2xl border border-slate-300 dark:border-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 bg-white/90 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 shadow-sm cursor-pointer focus:outline-none" title="Toggle Theme (Dark / Light)">
+          <svg id="theme-sun" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+          </svg>
+          <svg id="theme-moon" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+          </svg>
+        </button>
+
+        <!-- 3-Line Animated Hamburger Menu Button -->
+        <button id="menu-toggle-btn" class="btn-ripple btn-light-ripple w-10 h-10 rounded-2xl border border-slate-300 dark:border-slate-800 flex flex-col items-center justify-center gap-1 text-slate-700 dark:text-slate-300 bg-white/90 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 shadow-sm cursor-pointer focus:outline-none" title="Open Navigation Menu">
+          <span class="w-4 h-0.5 bg-current rounded-full transition-all duration-300" id="hamburger-line-1"></span>
+          <span class="w-4 h-0.5 bg-current rounded-full transition-all duration-300" id="hamburger-line-2"></span>
+          <span class="w-4 h-0.5 bg-current rounded-full transition-all duration-300" id="hamburger-line-3"></span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ============================================================= -->
+  <!-- SLIDE-OUT SIDEBAR DRAWER OVERLAY                              -->
+  <!-- ============================================================= -->
+  <!-- Backdrop -->
+  <div id="sidebar-backdrop" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden transition-opacity duration-300 opacity-0"></div>
+
+  <!-- Slide-out Drawer Panel -->
+  <div id="sidebar-drawer" class="fixed top-0 right-0 bottom-0 w-80 sm:w-96 drawer-panel z-50 transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col shadow-2xl">
+    
+    <!-- Drawer Header -->
+    <div class="p-6 border-b border-slate-200/90 dark:border-slate-800/80 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-md shadow-cyan-500/30 text-white flex-shrink-0">
+          <i class="fa-solid fa-play text-white text-sm ml-0.5"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-bold tracking-wide bg-gradient-to-r from-cyan-500 to-blue-500 dark:from-cyan-400 dark:to-blue-500 bg-clip-text text-transparent leading-tight">YTCache Studio</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Navigation Center</p>
+        </div>
+      </div>
+
+      <!-- Close Drawer Button -->
+      <button id="close-sidebar-btn" class="btn-ripple btn-light-ripple w-9 h-9 rounded-xl border border-slate-300 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer" title="Close Menu">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Navigation Links -->
+    <nav class="flex-1 p-5 overflow-y-auto space-y-1.5" id="sidebar-nav">
+      <!-- 1. Home -->
+      <button data-page="home" class="nav-item w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition cursor-pointer text-left">
+        <div class="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+        </div>
+        <span>Home Dashboard</span>
+      </button>
+
+      <!-- 2. About Us -->
+      <button data-page="about" class="nav-item w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition cursor-pointer text-left">
+        <div class="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <span>About Us</span>
+      </button>
+
+      <!-- 3. FAQ / Help Center -->
+      <button data-page="faq" class="nav-item w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition cursor-pointer text-left">
+        <div class="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <span>FAQ &amp; Help Center</span>
+      </button>
+
+      <!-- 4. Privacy Policy -->
+      <button data-page="privacy" class="nav-item w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition cursor-pointer text-left">
+        <div class="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+        </div>
+        <span>Privacy Policy</span>
+      </button>
+
+      <!-- 5. Terms & Conditions -->
+      <button data-page="terms" class="nav-item w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition cursor-pointer text-left">
+        <div class="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
+        <span>Terms &amp; Conditions</span>
+      </button>
+
+      <!-- 6. Contact Us -->
+      <button data-page="contact" class="nav-item w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition cursor-pointer text-left">
+        <div class="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+        </div>
+        <span>Contact Us</span>
+      </button>
+    </nav>
+
+    <!-- Drawer Footer -->
+    <div class="p-6 border-t border-slate-200/90 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60">
+      <div class="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
+        <span>Engine Version</span>
+        <span class="text-indigo-600 dark:text-indigo-400 font-bold">v3.0.0 Pro Edition</span>
+      </div>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500 leading-normal">
+        High-performance 4K video downloader and authentic speech transcript generation suite.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- DEDICATED INFORMATION PAGES MODAL (SMOOTH TRANSITION)         -->
+  <!-- ============================================================= -->
+  <div id="info-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/75 backdrop-blur-md hidden opacity-0 transition-opacity duration-300 ease-out">
+    <div id="info-modal-card" class="relative w-full max-w-3xl glass-panel rounded-3xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden border border-slate-300 dark:border-slate-800 transform scale-95 translate-y-4 opacity-0 transition-all duration-300 ease-out">
+      
+      <!-- Modal Header -->
+      <div class="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800/80 flex items-start justify-between gap-4">
+        <div class="flex items-center gap-3.5">
+          <div id="info-modal-icon-container" class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 flex-shrink-0">
+            <!-- Dynamic icon inserted via JS -->
+          </div>
+          <div>
+            <h3 id="info-modal-title" class="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">Page Title</h3>
+            <p id="info-modal-subtitle" class="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-0.5">Category Details</p>
+          </div>
+        </div>
+
+        <!-- Close Button -->
+        <button id="close-info-modal-btn" type="button" class="btn-ripple btn-light-ripple w-9 h-9 rounded-xl border border-slate-300 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer" title="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body Content -->
+      <div id="info-modal-content" class="p-6 sm:p-8 overflow-y-auto flex-1 text-slate-800 dark:text-slate-200 text-sm leading-relaxed space-y-4">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex items-center justify-end">
+        <button id="info-modal-done-btn" type="button" class="btn-ripple px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-md shadow-indigo-600/25 cursor-pointer">
+          Done / Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Hero & Main Workspace Container -->
+  <main class="flex-1 max-w-4xl w-full mx-auto px-4 pt-12 pb-24 flex flex-col items-center relative z-10">
+    
+    <!-- Hero Header -->
+    <div class="text-center max-w-2xl mb-8">
+      <h1 class="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight mb-4 leading-tight text-slate-900 dark:text-white">
+        Universal YouTube Downloader &amp; <br class="hidden sm:inline" />
+        <span class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Transcript Generator</span>
+      </h1>
+      
+      <p class="text-sm sm:text-base text-slate-700 dark:text-slate-400 max-w-xl mx-auto leading-relaxed font-medium">
+        Download videos up to <strong>4K Ultra HD</strong> or extract authentic transcripts with real-time translation in seconds.
+      </p>
+    </div>
+
+    <!-- Glassmorphic URL Input & Dual Action Buttons Console -->
+    <div id="hero-input-panel" class="w-full glass-panel active-input-glow rounded-3xl p-4 sm:p-6 transition-all duration-300">
+      
+      <!-- URL Input Capsule -->
+      <div class="relative flex items-center mb-4">
+        <div class="absolute left-4 text-slate-500 dark:text-slate-400 pointer-events-none">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+          </svg>
+        </div>
+        
+        <input 
+          type="url" 
+          id="video-url" 
+          required 
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Paste any YouTube URL (e.g. https://www.youtube.com/watch?v=...)" 
+          class="w-full pl-12 pr-32 py-4 bg-white/95 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm sm:text-base rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition font-semibold shadow-inner"
+        >
+
+        <!-- Paste Action Button with Working Icon & Feedback -->
+        <button 
+          type="button" 
+          id="paste-btn" 
+          class="btn-ripple btn-light-ripple absolute right-3 px-3.5 py-2 text-xs font-bold rounded-xl text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 transition flex items-center gap-1.5 shadow-sm cursor-pointer select-none"
+          title="Paste link from clipboard"
+        >
+          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+          </svg>
+          <span id="paste-btn-text">Paste</span>
+        </button>
+      </div>
+
+      <!-- Action Buttons Row -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+        
+        <!-- Button 1: Download Video -->
+        <button 
+          type="button" 
+          id="btn-download-video" 
+          class="btn-ripple btn-primary-action group overflow-hidden px-6 py-4 rounded-2xl font-bold text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 flex items-center justify-center gap-3.5 cursor-pointer"
+        >
+          <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-200">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            </svg>
+          </div>
+          <div class="text-left flex-1 min-w-0">
+            <div class="text-sm font-black tracking-tight leading-tight">Download Video</div>
+            <div class="text-[11px] font-semibold text-indigo-100">144p to 4K Ultra HD &bull; MP3 Audio</div>
+          </div>
+          <!-- Spinner -->
+          <svg id="download-btn-spinner" class="w-5 h-5 animate-spin hidden ml-auto" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </button>
+
+        <!-- Button 2: Generate Transcript (Fast) -->
+        <button 
+          type="button" 
+          id="btn-generate-transcript" 
+          class="btn-ripple btn-secondary-action group overflow-hidden px-6 py-4 rounded-2xl font-bold text-white bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-500 hover:to-rose-500 flex items-center justify-center gap-3.5 cursor-pointer"
+        >
+          <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-200">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+          </div>
+          <div class="text-left flex-1 min-w-0">
+            <div class="text-sm font-black tracking-tight leading-tight flex items-center gap-1.5">
+              <span>Generate Transcript</span>
+              <span class="shimmer-badge text-[9px] uppercase px-1.5 py-0.5 rounded-full bg-white/25 text-white font-black">Fast AI</span>
+            </div>
+            <div class="text-[11px] font-semibold text-pink-100">Authentic Speech &bull; Multi-Language</div>
+          </div>
+          <!-- Spinner -->
+          <svg id="transcript-btn-spinner" class="w-5 h-5 animate-spin hidden ml-auto" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </button>
+
+      </div>
+
+    </div>
+
+    <!-- Alert / Error Notification Box -->
+    <div id="error-box" class="w-full mt-4 hidden">
+      <div class="flex items-start gap-3 p-4 rounded-2xl bg-rose-500/15 border border-rose-500/35 text-rose-700 dark:text-rose-400 backdrop-blur-md shadow-sm">
+        <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <div class="flex-1 text-sm font-bold" id="error-message"></div>
+        <button id="error-close" class="text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 text-lg leading-none cursor-pointer" title="Dismiss">&times;</button>
+      </div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- SECTION 1: Video Downloader Formats & Progress Area           -->
+    <!-- ============================================================= -->
+    <div id="downloader-section" class="w-full mt-8 hidden opacity-0 translate-y-4 transition-all duration-300 ease-out">
+      
+      <!-- Video Information Capsule -->
+      <div class="glass-panel rounded-3xl p-5 sm:p-6 mb-6 relative">
+        <!-- Downloader Header Bar with Prominent Close Button -->
+        <div class="flex items-center justify-between pb-4 mb-5 border-b border-slate-200/90 dark:border-slate-800/80">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-xl bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            </div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Video Downloader</h3>
+              <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black uppercase tracking-wider">Ready</span>
+            </div>
+          </div>
+
+          <!-- Prominent Close Button (Cross Icon) -->
+          <button id="close-downloader-btn" type="button" class="btn-ripple btn-light-ripple w-9 h-9 rounded-xl border border-slate-300 dark:border-slate-700/80 bg-white/80 hover:bg-rose-50 dark:bg-slate-800/80 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:border-rose-300 dark:hover:border-rose-700/60 flex items-center justify-center transition-all duration-200 cursor-pointer group shadow-sm" title="Close Video Downloader">
+            <svg class="w-5 h-5 transition-transform duration-200 group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+          <div class="relative w-full sm:w-56 aspect-video rounded-2xl overflow-hidden bg-black flex-shrink-0 shadow-lg">
+            <img id="dl-card-thumbnail" src="" alt="Thumbnail" class="w-full h-full object-cover">
+            <span id="dl-card-duration" class="absolute bottom-2 right-2 px-2 py-0.5 text-xs font-bold rounded-lg bg-black/85 text-white backdrop-blur-sm">00:00</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h2 id="dl-card-title" class="font-black text-base sm:text-lg text-slate-900 dark:text-white line-clamp-2 leading-snug"></h2>
+            <div class="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-600 dark:text-slate-400 font-semibold">
+              <span id="dl-card-uploader" class="font-bold text-slate-900 dark:text-slate-200"></span>
+              <span>&bull;</span>
+              <span id="dl-card-views"></span> views
+            </div>
+          </div>
+        </div>
+
+        <!-- Format Category Tabs -->
+        <div class="mt-6 border-t border-slate-200/90 dark:border-slate-800/80 pt-5 flex items-center gap-2 overflow-x-auto pb-1">
+          <button id="tab-video" class="btn-ripple px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-indigo-600 text-white shadow-md shadow-indigo-600/25 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            <span>Video with Audio</span>
+          </button>
+          
+          <button id="tab-video-only" class="btn-ripple btn-light-ripple px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-700 dark:text-slate-400 bg-slate-200/80 dark:bg-slate-800/80 hover:bg-slate-300 dark:hover:bg-slate-700 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <span>Visuals Only (Mute)</span>
+          </button>
+          
+          <button id="tab-audio" class="btn-ripple btn-light-ripple px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 text-slate-700 dark:text-slate-400 bg-slate-200/80 dark:bg-slate-800/80 hover:bg-slate-300 dark:hover:bg-slate-700 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+            <span>Audio Only (MP3/M4A)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Download Progress Card -->
+      <div id="progress-card" class="glass-panel rounded-3xl p-5 sm:p-6 mb-6 hidden">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span id="progress-status-text" class="text-sm font-bold text-slate-900 dark:text-slate-200">Downloading stream...</span>
+          </div>
+          <span id="progress-percent" class="text-sm font-black text-indigo-600 dark:text-indigo-400">0%</span>
+        </div>
+
+        <div class="w-full h-3 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-0.5">
+          <div id="progress-bar-fill" class="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-pink-500 rounded-full transition-all duration-300 w-0"></div>
+        </div>
+
+        <div class="flex items-center justify-between mt-3 text-xs text-slate-600 dark:text-slate-400 font-semibold">
+          <span id="progress-details">0 MB / 0 MB</span>
+          <div class="flex items-center gap-3">
+            <span id="progress-speed"></span>
+            <span id="progress-eta"></span>
+          </div>
+        </div>
+
+        <!-- Download Completion Direct Link -->
+        <div id="download-ready-box" class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 hidden flex items-center justify-between">
+          <span class="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+            Download ready! If it did not start automatically, click:
+          </span>
+          <a id="download-direct-link" href="#" class="btn-ripple px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition shadow-md shadow-emerald-600/25">
+            Save File
+          </a>
+        </div>
+      </div>
+
+      <!-- Format Grids -->
+      <!-- 1. Video with Sound -->
+      <div id="video-formats-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
+
+      <!-- 2. Visuals Only -->
+      <div id="video-only-formats-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 hidden"></div>
+
+      <!-- 3. Audio Only -->
+      <div id="audio-formats-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 hidden"></div>
+
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- SECTION 2: Authentic Speech Transcript Pop-up Modal            -->
+    <!-- ============================================================= -->
+    <div id="transcript-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/75 backdrop-blur-md hidden opacity-0 transition-opacity duration-300 ease-out">
+      <div id="transcript-modal-card" class="relative w-full max-w-3xl glass-panel rounded-3xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden border border-slate-300 dark:border-slate-800 transform scale-95 translate-y-4 opacity-0 transition-all duration-300 ease-out">
+        
+        <!-- Modal Header -->
+        <div class="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800/80 flex items-start justify-between gap-4">
+          <div class="flex items-center gap-3.5">
+            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-pink-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/30 flex-shrink-0">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white">Authentic Speech Transcript</h3>
+                <span id="transcript-lang-badge" class="px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-400 border border-purple-500/25 text-[10px] font-black uppercase tracking-wider">Original Audio</span>
+              </div>
+              <p id="transcript-video-title" class="text-xs text-slate-600 dark:text-slate-400 line-clamp-1 max-w-md mt-0.5 font-semibold">YouTube Video</p>
+            </div>
+          </div>
+
+          <!-- Close Button -->
+          <button id="close-transcript-modal" type="button" class="btn-ripple btn-light-ripple w-9 h-9 rounded-xl border border-slate-300 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer" title="Close Modal">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Controls Toolbar: Language Dropdown, Copy, Download .txt -->
+        <div class="px-5 sm:px-6 py-3.5 bg-slate-100/90 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+          
+          <!-- Translation Dropdown -->
+          <div class="flex items-center gap-2">
+            <label for="transcript-lang-select" class="text-xs font-bold text-slate-700 dark:text-slate-400 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
+              </svg>
+              <span>Translate:</span>
+            </label>
+            <select id="transcript-lang-select" class="text-xs font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm">
+              <option value="original">Original Spoken Audio</option>
+              <option value="en">English</option>
+              <option value="ur">Urdu (اردو)</option>
+              <option value="hi">Hindi (हिन्दी)</option>
+              <option value="ar">Arabic (العربية)</option>
+              <option value="es">Spanish (Español)</option>
+              <option value="fr">French (Français)</option>
+              <option value="de">German (Deutsch)</option>
+              <option value="zh-CN">Chinese (Simplified)</option>
+              <option value="ru">Russian (Русский)</option>
+              <option value="ja">Japanese (日本語)</option>
+              <option value="tr">Turkish (Türkçe)</option>
+              <option value="pt">Portuguese (Português)</option>
+              <option value="fa">Persian (فارسی)</option>
+            </select>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-center gap-2">
+            <!-- Copy Button -->
+            <button id="copy-transcript-btn" type="button" class="btn-ripple btn-light-ripple px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 transition cursor-pointer shadow-sm">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+              </svg>
+              <span id="copy-btn-text">Copy</span>
+            </button>
+
+            <!-- Download .txt Button -->
+            <button id="download-txt-btn" type="button" class="btn-ripple px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer shadow-md shadow-purple-600/25">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+              <span>Download .txt</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Modal Body Content -->
+        <div id="transcript-body" class="p-6 sm:p-7 overflow-y-auto flex-1 min-h-[300px] max-h-[58vh]">
+          
+          <!-- Loading State -->
+          <div id="transcript-loading" class="flex flex-col items-center justify-center py-16 gap-3">
+            <svg class="w-9 h-9 animate-spin text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-sm font-bold text-slate-700 dark:text-slate-400" id="transcript-loading-text">Extracting spoken audio transcript...</span>
+          </div>
+
+          <!-- Clean Paragraph Container -->
+          <div id="transcript-paragraph-box" class="hidden">
+            <div class="p-6 rounded-2xl bg-white/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+              <p id="transcript-paragraph" class="text-sm sm:text-base leading-relaxed text-slate-900 dark:text-slate-100 whitespace-pre-wrap selection:bg-purple-500 selection:text-white font-medium"></p>
+            </div>
+          </div>
+
+          <!-- Error State -->
+          <div id="transcript-error" class="hidden p-6 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-400 text-center font-semibold">
+            <p class="font-bold mb-1" id="transcript-error-msg">Transcript unavailable.</p>
+            <p class="text-xs text-slate-600 dark:text-slate-400">No speech or captions are available for this video.</p>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Complete Website Footer -->
+  <footer class="w-full border-t border-slate-200/90 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/70 backdrop-blur-xl py-8 text-xs text-slate-600 dark:text-slate-400 text-center relative z-10 font-medium">
+    <div class="max-w-4xl mx-auto px-4 flex flex-col items-center gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-sm shadow-cyan-500/30 text-white flex-shrink-0">
+          <i class="fa-solid fa-play text-white text-[10px] ml-0.5"></i>
+        </div>
+        <span class="font-bold text-sm tracking-wider bg-gradient-to-r from-cyan-500 to-blue-500 dark:from-cyan-400 dark:to-blue-500 bg-clip-text text-transparent">YTCache Studio</span>
+      </div>
+      <p>&copy; 2026 YTCache Studio &bull; Next-Gen 4K YouTube Downloader &amp; Transcript Generator</p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js?v=15.0"></script>
+</body>
+</html>
