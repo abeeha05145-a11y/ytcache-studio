@@ -42,17 +42,11 @@ YOUTUBE_EXTRACTOR_ARGS = {
     }
 }
 
-PROXIES_POOL = [
-    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
-    "http://dxgwkmac:ul130busmnzq@38.154.185.97:6370",
-    "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361"
-]
-
 def get_proxy_list() -> List[Optional[str]]:
     env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
     if env_p and len(env_p.strip()) > 5:
-        return [None, env_p.strip()] + PROXIES_POOL
-    return [None] + list(PROXIES_POOL)
+        return [env_p.strip(), None]
+    return [None]
 
 def get_cookie_opts() -> Dict[str, Any]:
     """Detect cookies.txt / www.youtube.com_cookies.txt or YOUTUBE_COOKIES env var."""
@@ -123,20 +117,31 @@ def extract_video_info(url: str) -> Dict[str, Any]:
 
     info = None
     last_err = None
-    proxies_to_try = get_proxy_list() + [None]
+    proxies_to_try = get_proxy_list()
+    clients_to_try = [
+        ['visionos'],
+        ['android', 'ios'],
+        ['android'],
+        ['web']
+    ]
 
-    for p in proxies_to_try:
-        run_opts = dict(ydl_opts)
-        if p:
-            run_opts['proxy'] = p
-        try:
-            with yt_dlp.YoutubeDL(run_opts) as ydl:
-                info = ydl.extract_info(clean_url, download=False)
-                if info:
-                    break
-        except Exception as e:
-            last_err = e
-            continue
+    for client in clients_to_try:
+        run_ydl_opts = dict(ydl_opts)
+        run_ydl_opts['extractor_args'] = {'youtube': {'player_client': client}}
+        for p in proxies_to_try:
+            if p:
+                run_ydl_opts['proxy'] = p
+            try:
+                with yt_dlp.YoutubeDL(run_ydl_opts) as ydl:
+                    cand = ydl.extract_info(clean_url, download=False)
+                    if cand and cand.get('formats'):
+                        info = cand
+                        break
+            except Exception as e:
+                last_err = e
+                continue
+        if info:
+            break
 
     if not info:
         err_msg = str(last_err) if last_err else "No video information found."
@@ -440,22 +445,30 @@ def start_download_task(
             ydl_opts['merge_output_format'] = 'mp4'
 
         info = None
-        proxies_to_try = get_proxy_list() + [None]
-        for p in proxies_to_try:
-            run_opts = dict(ydl_opts)
-            if p:
-                run_opts['proxy'] = p
-            try:
-                with yt_dlp.YoutubeDL(run_opts) as ydl:
-                    job['message'] = "Contacting YouTube servers..."
-                    info = ydl.extract_info(clean_url, download=True)
-                    if info:
-                        break
-            except Exception as e:
-                continue
+        clients_to_try = [['visionos'], ['android', 'ios'], ['android']]
+        proxies_to_try = get_proxy_list()
+        last_dl_err = None
+
+        for cl in clients_to_try:
+            for p in proxies_to_try:
+                run_opts = dict(ydl_opts)
+                run_opts['extractor_args'] = {'youtube': {'player_client': cl}}
+                if p:
+                    run_opts['proxy'] = p
+                try:
+                    with yt_dlp.YoutubeDL(run_opts) as ydl:
+                        job['message'] = "Downloading high-speed media stream..."
+                        info = ydl.extract_info(clean_url, download=True)
+                        if info:
+                            break
+                except Exception as e:
+                    last_dl_err = e
+                    continue
+            if info:
+                break
         
         if not info:
-            raise Exception("Failed to download video stream from YouTube servers.")
+            raise Exception(f"Failed to download video stream from YouTube servers: {last_dl_err}")
 
         # Find the actual generated file on disk
         # Pattern: {DOWNLOAD_DIR}/{job_id}_*
