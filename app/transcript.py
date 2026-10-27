@@ -7,6 +7,7 @@ import requests
 import yt_dlp
 import os
 from app.config import DOWNLOAD_DIR
+from app.downloader import get_proxy_list
 
 CHROME_TARGET = None
 
@@ -153,31 +154,37 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     ydl_instance = None
     last_err = None
 
+    proxies_to_try = get_proxy_list()
     for config in clients_to_try:
-        ydl_opts: Dict[str, Any] = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'format': 'all/none',
-            'extractor_args': {
-                'youtube': config
+        for p in proxies_to_try:
+            ydl_opts: Dict[str, Any] = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'format': 'all/none',
+                'extractor_args': {
+                    'youtube': config
+                }
             }
-        }
-        if cookie_opts:
-            ydl_opts.update(cookie_opts)
+            if p:
+                ydl_opts['proxy'] = p
+            if cookie_opts:
+                ydl_opts.update(cookie_opts)
 
-        try:
-            ydl = yt_dlp.YoutubeDL(ydl_opts)
-            cand_info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            if cand_info and (cand_info.get('subtitles') or cand_info.get('automatic_captions')):
-                info = cand_info
-                ydl_instance = ydl
-                break
-        except Exception as e:
-            last_err = e
-            continue
+            try:
+                ydl = yt_dlp.YoutubeDL(ydl_opts)
+                cand_info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                if cand_info and (cand_info.get('subtitles') or cand_info.get('automatic_captions')):
+                    info = cand_info
+                    ydl_instance = ydl
+                    break
+            except Exception as e:
+                last_err = e
+                continue
+        if info:
+            break
 
     if not info or not ydl_instance:
         err_msg = str(last_err) if last_err else "No video metadata found."
