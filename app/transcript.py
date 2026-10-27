@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import requests
 import yt_dlp
-CHROME_TARGET = None
-from youtube_transcript_api import YouTubeTranscriptApi
 import os
+from youtube_transcript_api import YouTubeTranscriptApi
+from app.config import DOWNLOAD_DIR
+
+CHROME_TARGET = None
 
 def get_cookie_opts() -> Dict[str, Any]:
     """Detect cookies.txt / www.youtube.com_cookies.txt or YOUTUBE_COOKIES env var."""
-    # Check common cookie filenames in root, app, and current directory
     search_dirs = [Path("."), Path("/app"), Path(__file__).resolve().parent.parent, Path(__file__).resolve().parent]
     cookie_names = [
         "www.youtube.com_cookies.txt",
@@ -24,7 +25,6 @@ def get_cookie_opts() -> Dict[str, Any]:
             p = d / name
             if p.exists() and p.stat().st_size > 0:
                 return {'cookiefile': str(p.resolve())}
-        # Also check any .txt file with 'cookie' in the name
         try:
             for p in d.glob("*cookie*.txt"):
                 if p.exists() and p.stat().st_size > 0:
@@ -44,8 +44,8 @@ def get_cookie_opts() -> Dict[str, Any]:
     return {}
 
 PROXIES_POOL = [
-    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
     "http://dxgwkmac:ul130busmnzq@64.137.10.153:5803",
+    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
     "http://dxgwkmac:ul130busmnzq@38.154.185.97:6370",
     "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361",
     "http://dxgwkmac:ul130busmnzq@45.38.107.97:6014"
@@ -56,8 +56,6 @@ def get_proxy_list() -> List[Optional[str]]:
     if env_p and len(env_p.strip()) > 5:
         return [env_p.strip()] + PROXIES_POOL
     return list(PROXIES_POOL)
-
-from app.config import DOWNLOAD_DIR
 
 LANGUAGES = {
     "original": "Original Spoken Audio",
@@ -95,6 +93,17 @@ def extract_youtube_id(url: str) -> Optional[str]:
             return match.group(1)
     return None
 
+def fetch_video_title(video_id: str) -> str:
+    """Fetch video title using lightning-fast YouTube oEmbed (no auth / no rate limits)."""
+    try:
+        url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        r = requests.get(url, timeout=5)
+        if r.status_code == 200:
+            return r.json().get('title', 'YouTube Video')
+    except Exception:
+        pass
+    return "YouTube Video"
+
 def translate_paragraph(text: str, target_lang: str) -> str:
     """
     Translates paragraph text into target language using Google Translate API.
@@ -103,7 +112,6 @@ def translate_paragraph(text: str, target_lang: str) -> str:
     if not text.strip() or target_lang in ["original", "default"]:
         return text
 
-    # Split into chunks of ~1000 characters around sentence boundaries
     sentences = re.split(r'([.?!۔।\n]+)', text)
     chunks = []
     current_chunk = ""
@@ -136,149 +144,182 @@ def translate_paragraph(text: str, target_lang: str) -> str:
             else:
                 translated_chunks.append(chunk)
         except Exception as e:
-            print(f"[Translation] Error: {e}")
             translated_chunks.append(chunk)
 
     return " ".join(translated_chunks)
 
-def vtt_to_clean_paragraph(vtt_text: str) -> str:
-    """
-    Parses WebVTT subtitle data into a cohesive, readable speech paragraph.
-    Removes VTT timestamps, cues, sound descriptions, and duplicates.
-    """
-    pattern = re.compile(
-        r'(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}[^\r\n]*\r?\n(.*?)(?=\r?\n\r?\n|\Z)',
-        re.DOTALL
-    )
-    blocks = pattern.findall(vtt_text)
-    cleaned_chunks = []
-    seen = set()
-
-    for block in blocks:
-        t = re.sub(r'<[^>]+>', '', block)
-        t = re.sub(r'\[(?:Music|Applause|Laughter|Cheering|Audio)\]', '', t, flags=re.I)
-        t = re.sub(r'\((?:Music|Applause|Laughter)\)', '', t, flags=re.I)
-        t = re.sub(r'[♪♫#]+', '', t)
-        t = re.sub(r'\s+', ' ', t).strip()
-
-        if t and t not in seen:
-            seen.add(t)
-            cleaned_chunks.append(t)
-
-    raw_text = " ".join(cleaned_chunks)
-    raw_text = re.sub(r'\s+([.,?!])', r'\1', raw_text)
-    raw_text = re.sub(r'\s+', ' ', raw_text).strip()
-    return raw_text
-
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
     """
-    Lightweight, fast transcript extractor.
-    Zero video or audio downloading.
-    Extracts purely speech text within 1-2 seconds.
+    High-speed, robust speech transcript extractor.
+    Uses official YouTube transcript streams (direct + proxy pool).
+    Takes < 1 second, zero disk downloads.
     """
     video_id = extract_youtube_id(url)
     if not video_id:
         raise ValueError("Invalid YouTube URL. Please enter a valid YouTube video link.")
 
-    job_id = str(uuid.uuid4())[:8]
-    temp_prefix = DOWNLOAD_DIR / f"cap_{job_id}"
-    video_title = "YouTube Video"
+    video_title = fetch_video_title(video_id)
     original_paragraph = ""
     detected_lang = "en"
+    detected_transcript_obj = None
 
-    # METHOD 1: Fast yt-dlp metadata caption download (skip_download=True, < 1 sec, zero media download)
-    try:
-        cookie_opts = get_cookie_opts()
-        ydl_opts = {
-            'skip_download': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitlesformat': 'vtt',
-            'outtmpl': str(temp_prefix) + '.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-        }
-        if cookie_opts:
-            ydl_opts.update(cookie_opts)
-            ydl_opts['extractor_args'] = {
-                'youtube': {
-                    'player_client': ['android', 'ios'],
-                }
-            }
-        else:
-            ydl_opts['extractor_args'] = {
-                'youtube': {
-                    'player_client': ['android', 'ios'],
-                    'player_skip': ['webpage', 'configs'],
-                }
-            }
-        proxies_to_try = get_proxy_list() + [None]
-        for p in proxies_to_try:
-            run_opts = dict(ydl_opts)
-            if p:
-                run_opts['proxy'] = p
-            try:
-                with yt_dlp.YoutubeDL(run_opts) as ydl:
-                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
-                    video_title = info.get('title', 'YouTube Video')
+    # First try direct connection, then working proxies
+    sessions_to_try = [None] + get_proxy_list()
+
+    for proxy in sessions_to_try:
+        try:
+            http_client = None
+            if proxy:
+                http_client = requests.Session()
+                http_client.proxies = {'http': proxy, 'https': proxy}
+
+            api = YouTubeTranscriptApi(http_client=http_client)
+            transcript_list = api.list(video_id)
+
+            chosen_t = None
+            # Check for preferred language matches
+            pref_codes = [target_lang, 'en', 'ur', 'hi'] if target_lang not in ["original", "default"] else ['en', 'ur', 'hi']
+            for code in pref_codes:
+                try:
+                    chosen_t = transcript_list.find_transcript([code])
+                    if chosen_t:
+                        break
+                except Exception:
+                    pass
+
+            # Fallback to any transcript available
+            if not chosen_t:
+                for t in transcript_list:
+                    chosen_t = t
                     break
-            except Exception:
-                continue
 
-        # Find downloaded .vtt files
-        vtt_files = list(DOWNLOAD_DIR.glob(f"cap_{job_id}.*.vtt"))
-        if vtt_files:
-            # Pick first file
-            vtt_file = vtt_files[0]
-            # Extract language code from filename (cap_xxxx.en.vtt)
-            name_parts = vtt_file.name.split('.')
-            if len(name_parts) >= 3:
-                detected_lang = name_parts[-2].replace('-orig', '')
+            if chosen_t:
+                detected_transcript_obj = chosen_t
+                detected_lang = chosen_t.language_code
+                snippets = chosen_t.fetch()
+                clean_lines = []
+                for s in snippets:
+                    t = getattr(s, 'text', '') or (s.get('text', '') if isinstance(s, dict) else '')
+                    t = re.sub(r'\[.*?\]', '', t)
+                    t = re.sub(r'\(.*?\)', '', t)
+                    t = re.sub(r'[♪♫#]+', '', t)
+                    t = re.sub(r'\s+', ' ', t).strip()
+                    if t:
+                        clean_lines.append(t)
+                text = " ".join(clean_lines)
+                text = re.sub(r'\s+([.,?!])', r'\1', text)
+                original_paragraph = text.strip()
+                if original_paragraph:
+                    break
+        except Exception as e:
+            continue
 
-            vtt_text = vtt_file.read_text(encoding='utf-8')
-            original_paragraph = vtt_to_clean_paragraph(vtt_text)
-
-        # Cleanup temp caption files
-        for f in list(DOWNLOAD_DIR.glob(f"cap_{job_id}.*")):
-            try:
-                f.unlink()
-            except Exception:
-                pass
-
-    except Exception as e:
-        print(f"[Transcript] Method 1 notice: {e}")
-
-    # METHOD 2: Fallback using youtube-transcript-api if Method 1 didn't yield text
+    # Fallback to yt-dlp metadata caption extractor if API was blocked
     if not original_paragraph:
         try:
-            transcript_api = YouTubeTranscriptApi()
-            transcript_list = transcript_api.fetch(video_id)
-            if transcript_list:
-                cleaned_snippets = []
-                for snippet in transcript_list:
-                    txt = getattr(snippet, 'text', '') or (snippet.get('text', '') if isinstance(snippet, dict) else '')
-                    txt = re.sub(r'\[.*?\]', '', txt).strip()
-                    if txt:
-                        cleaned_snippets.append(txt)
-                original_paragraph = " ".join(cleaned_snippets)
-                detected_lang = "en"
-        except Exception as e:
-            print(f"[Transcript] Method 2 notice: {e}")
+            cookie_opts = get_cookie_opts()
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+            }
+            if cookie_opts:
+                ydl_opts.update(cookie_opts)
+
+            proxies_to_try = [None] + get_proxy_list()
+            for p in proxies_to_try:
+                run_opts = dict(ydl_opts)
+                if p:
+                    run_opts['proxy'] = p
+                try:
+                    with yt_dlp.YoutubeDL(run_opts) as ydl:
+                        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                        if info:
+                            if not video_title or video_title == "YouTube Video":
+                                video_title = info.get('title', 'YouTube Video')
+                            subs = info.get('subtitles') or info.get('automatic_captions') or {}
+                            target_caps = None
+                            for code in ['en', 'ur', 'hi']:
+                                if code in subs:
+                                    target_caps = subs[code]
+                                    detected_lang = code
+                                    break
+                            if not target_caps and subs:
+                                first_k = list(subs.keys())[0]
+                                target_caps = subs[first_k]
+                                detected_lang = first_k
+
+                            if target_caps:
+                                chosen_fmt = next((f for f in target_caps if f.get('ext') == 'json3'), None) or target_caps[0]
+                                cap_url = chosen_fmt.get('url')
+                                if cap_url:
+                                    cap_resp = requests.get(cap_url, timeout=6)
+                                    if cap_resp.status_code == 200:
+                                        if chosen_fmt.get('ext') == 'json3':
+                                            jdata = cap_resp.json()
+                                            events = jdata.get('events', [])
+                                            lines = []
+                                            for ev in events:
+                                                for seg in ev.get('segs', []):
+                                                    st = seg.get('utf8', '').strip()
+                                                    if st and st != '\n':
+                                                        lines.append(st)
+                                            original_paragraph = " ".join(lines)
+                                        else:
+                                            # Clean VTT
+                                            t = re.sub(r'<[^>]+>', '', cap_resp.text)
+                                            t = re.sub(r'(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}[^\r\n]*', '', t)
+                                            t = re.sub(r'\[.*?\]', '', t)
+                                            original_paragraph = re.sub(r'\s+', ' ', t).strip()
+                                        if original_paragraph:
+                                            break
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
     if not original_paragraph:
         raise ValueError("No speech transcript or subtitles are available for this video.")
 
     original_lang_name = LANGUAGES.get(detected_lang, detected_lang.upper())
+    current_paragraph = original_paragraph
+    current_lang = detected_lang
+    current_lang_name = f"{original_lang_name} (Original)"
 
     # Handle Translation
-    current_lang = target_lang
-    if target_lang in ["original", "default", detected_lang]:
-        current_paragraph = original_paragraph
-        current_lang_name = f"{original_lang_name} (Original)"
-        current_lang = detected_lang
-    else:
-        current_paragraph = translate_paragraph(original_paragraph, target_lang)
-        current_lang_name = LANGUAGES.get(target_lang, target_lang.upper())
+    if target_lang not in ["original", "default", detected_lang]:
+        translated = False
+        # 1. Try YouTube official translation track
+        if detected_transcript_obj and getattr(detected_transcript_obj, 'is_translatable', False):
+            try:
+                trans_obj = detected_transcript_obj.translate(target_lang)
+                snippets = trans_obj.fetch()
+                clean_lines = []
+                for s in snippets:
+                    t = getattr(s, 'text', '') or (s.get('text', '') if isinstance(s, dict) else '')
+                    t = re.sub(r'\[.*?\]', '', t)
+                    t = re.sub(r'\(.*?\)', '', t)
+                    t = re.sub(r'\s+', ' ', t).strip()
+                    if t:
+                        clean_lines.append(t)
+                if clean_lines:
+                    current_paragraph = " ".join(clean_lines)
+                    current_lang = target_lang
+                    current_lang_name = LANGUAGES.get(target_lang, target_lang.upper())
+                    translated = True
+            except Exception:
+                pass
+
+        # 2. Try Google Translate fallback
+        if not translated:
+            try:
+                translated_text = translate_paragraph(original_paragraph, target_lang)
+                if translated_text and translated_text != original_paragraph:
+                    current_paragraph = translated_text
+                    current_lang = target_lang
+                    current_lang_name = LANGUAGES.get(target_lang, target_lang.upper())
+            except Exception:
+                pass
 
     return {
         "success": True,
