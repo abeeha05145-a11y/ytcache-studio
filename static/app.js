@@ -1262,6 +1262,33 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.detail || data.error || "Failed to retrieve speech transcript.");
       }
 
+      if (data.need_client_fetch && data.caption_url) {
+        try {
+          const capResp = await fetch(data.caption_url);
+          const jdata = await capResp.json();
+          const words = [];
+          if (jdata.events) {
+            for (const ev of jdata.events) {
+              if (ev.segs) {
+                for (const seg of ev.segs) {
+                  if (seg.utf8) words.push(seg.utf8.trim());
+                }
+              }
+            }
+          }
+          let cleanText = words.join(' ').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').replace(/[♪♫#]+/g, '').replace(/\s+/g, ' ').trim();
+          if (cleanText) {
+            data.paragraph = cleanText;
+            currentTranscriptData = data;
+            if (transcriptVideoTitle) transcriptVideoTitle.textContent = data.video_title || 'YouTube Video';
+            showModalParagraph(data.paragraph, data.original_lang_name);
+            return;
+          }
+        } catch (clientErr) {
+          console.warn("Client-side caption fetch fallback:", clientErr);
+        }
+      }
+
       currentTranscriptData = data;
 
       if (transcriptVideoTitle) transcriptVideoTitle.textContent = data.video_title || 'YouTube Video';
