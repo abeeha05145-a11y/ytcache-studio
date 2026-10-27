@@ -42,6 +42,20 @@ YOUTUBE_EXTRACTOR_ARGS = {
     }
 }
 
+PROXIES_POOL = [
+    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
+    "http://dxgwkmac:ul130busmnzq@64.137.10.153:5803",
+    "http://dxgwkmac:ul130busmnzq@38.154.185.97:6370",
+    "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361",
+    "http://dxgwkmac:ul130busmnzq@45.38.107.97:6014"
+]
+
+def get_proxy_list() -> List[Optional[str]]:
+    env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+    if env_p and len(env_p.strip()) > 5:
+        return [env_p.strip()] + PROXIES_POOL
+    return list(PROXIES_POOL)
+
 def get_cookie_opts() -> Dict[str, Any]:
     """Detect cookies.txt / www.youtube.com_cookies.txt or YOUTUBE_COOKIES env var."""
     # Check common cookie filenames in root, app, and current directory
@@ -111,26 +125,35 @@ def extract_video_info(url: str) -> Dict[str, Any]:
     else:
         ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(clean_url, download=False)
-        except yt_dlp.utils.DownloadError as e:
-            err_msg = str(e)
-            if "Private video" in err_msg:
-                raise ValueError("This video is private and cannot be downloaded.")
-            elif "Video unavailable" in err_msg:
-                raise ValueError("Video is unavailable or has been removed.")
-            elif "Sign in to confirm your age" in err_msg:
-                raise ValueError("This video is age-restricted and requires authentication.")
-            elif "Incomplete YouTube ID" in err_msg or "is not a valid URL" in err_msg:
-                raise ValueError("Please provide a valid YouTube video link.")
-            else:
-                raise ValueError(f"Could not fetch video info: {err_msg}")
-        except Exception as e:
-            raise ValueError(f"An unexpected error occurred: {str(e)}")
+    info = None
+    last_err = None
+    proxies_to_try = get_proxy_list() + [None]
 
-        if not info:
-            raise ValueError("No video information found.")
+    for p in proxies_to_try:
+        run_opts = dict(ydl_opts)
+        if p:
+            run_opts['proxy'] = p
+        try:
+            with yt_dlp.YoutubeDL(run_opts) as ydl:
+                info = ydl.extract_info(clean_url, download=False)
+                if info:
+                    break
+        except Exception as e:
+            last_err = e
+            continue
+
+    if not info:
+        err_msg = str(last_err) if last_err else "No video information found."
+        if "Private video" in err_msg or "private" in err_msg.lower():
+            raise ValueError("This video is private and cannot be downloaded.")
+        elif "Video unavailable" in err_msg or "unavailable" in err_msg.lower():
+            raise ValueError("Video is unavailable or has been removed from YouTube.")
+        elif "Sign in to confirm your age" in err_msg:
+            raise ValueError("This video is age-restricted and requires authentication.")
+        elif "Incomplete YouTube ID" in err_msg or "is not a valid URL" in err_msg:
+            raise ValueError("Please provide a valid YouTube video link.")
+        else:
+            raise ValueError(f"Could not fetch video info: {err_msg}")
 
         formats = info.get('formats', [])
         duration = info.get('duration', 0)
@@ -415,9 +438,23 @@ def start_download_task(
                 'preferedformat': 'mp4'
             }]
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            job['message'] = "Contacting YouTube servers..."
-            info = ydl.extract_info(clean_url, download=True)
+        info = None
+        proxies_to_try = get_proxy_list() + [None]
+        for p in proxies_to_try:
+            run_opts = dict(ydl_opts)
+            if p:
+                run_opts['proxy'] = p
+            try:
+                with yt_dlp.YoutubeDL(run_opts) as ydl:
+                    job['message'] = "Contacting YouTube servers..."
+                    info = ydl.extract_info(clean_url, download=True)
+                    if info:
+                        break
+            except Exception as e:
+                continue
+        
+        if not info:
+            raise Exception("Failed to download video stream from YouTube servers.")
             
             # Find the actual generated file on disk
             # Pattern: {DOWNLOAD_DIR}/{job_id}_*
