@@ -121,7 +121,7 @@ def translate_paragraph(text: str, target_lang: str) -> str:
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
     """
     Direct, bulletproof speech transcript extractor.
-    Uses official YouTube mobile client pipeline with zero disk download.
+    Uses official YouTube visionos client pipeline with zero disk download.
     Never blocked by datacenter IP bot checks, 100% 24/7 cloud uptime.
     """
     video_id = extract_youtube_id(url)
@@ -135,7 +135,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
         'skip_download': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios']
+                'player_client': ['visionos']
             }
         }
     }
