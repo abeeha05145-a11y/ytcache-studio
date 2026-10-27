@@ -7,7 +7,7 @@ import requests
 import yt_dlp
 import os
 from app.config import DOWNLOAD_DIR
-from app.downloader import get_proxy_list, get_cookie_opts
+from app.downloader import get_proxy_list, get_cookie_opts, get_cached_metadata, PRIMARY_PROXY, PROXIES_POOL
 
 CHROME_TARGET = None
 
@@ -104,22 +104,27 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     except Exception:
         pass
 
-    cookie_opts = get_cookie_opts()
-    proxies_to_try = get_proxy_list()
-
-    clients_to_try = [
-        {'player_client': ['android'], 'player_skip': ['webpage']},
-        {'player_client': ['android']},
-        {'player_client': ['android', 'ios']},
-        {'player_client': ['ios']}
-    ]
-
     info = None
-    ydl_instance = None
     last_err = None
 
-    for config in clients_to_try:
-        for p in proxies_to_try:
+    # Check high-speed metadata cache first
+    watch_url = f"https://www.youtube.com/watch?v={video_id}"
+    cached = get_cached_metadata(watch_url)
+    if cached and cached.get('raw_info'):
+        cand = cached['raw_info']
+        if cand.get('subtitles') or cand.get('automatic_captions'):
+            info = cand
+
+    if not info:
+        cookie_opts = get_cookie_opts()
+        fast_attempts = [
+            {'client': ['android'], 'proxy': PRIMARY_PROXY},
+            {'client': ['visionos'], 'proxy': PRIMARY_PROXY},
+            {'client': ['android'], 'proxy': PROXIES_POOL[1]},
+            {'client': ['ios'], 'proxy': PROXIES_POOL[2]},
+        ]
+
+        for att in fast_attempts:
             ydl_opts: Dict[str, Any] = {
                 'quiet': True,
                 'no_warnings': True,
@@ -127,29 +132,30 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                 'writesubtitles': True,
                 'writeautomaticsub': True,
                 'format': 'all/none',
+                'socket_timeout': 5,
                 'extractor_args': {
-                    'youtube': config
+                    'youtube': {
+                        'player_client': att['client'],
+                        'player_skip': ['webpage']
+                    }
                 }
             }
-            if p:
-                ydl_opts['proxy'] = p
+            if att['proxy']:
+                ydl_opts['proxy'] = att['proxy']
             if cookie_opts:
                 ydl_opts.update(cookie_opts)
 
             try:
-                ydl = yt_dlp.YoutubeDL(ydl_opts)
-                cand_info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                if cand_info and (cand_info.get('subtitles') or cand_info.get('automatic_captions')):
-                    info = cand_info
-                    ydl_instance = ydl
-                    break
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    cand_info = ydl.extract_info(watch_url, download=False)
+                    if cand_info and (cand_info.get('subtitles') or cand_info.get('automatic_captions')):
+                        info = cand_info
+                        break
             except Exception as e:
                 last_err = e
                 continue
-        if info:
-            break
 
-    if not info or not ydl_instance:
+    if not info:
         err_msg = str(last_err) if last_err else "No video metadata found."
         raise ValueError(f"Could not connect to YouTube servers: {err_msg}")
 
