@@ -108,27 +108,53 @@ async def serve_index():
 @app.get("/api/test-trans")
 def test_trans(url: str = "https://youtu.be/TpQLKdP5Nec"):
     import traceback
-    import requests
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from app.transcript import extract_youtube_id, get_cookie_jar
+    import yt_dlp
+    import json
+    from app.transcript import extract_youtube_id, get_cookie_opts
     vid = extract_youtube_id(url)
-    cj = get_cookie_jar()
-    session = requests.Session()
-    if cj:
-        session.cookies = cj
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-    })
+    cookie_opts = get_cookie_opts()
     
-    result = {"cj_len": len(list(cj)) if cj else 0}
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'format': 'all/none',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android'],
+                'player_skip': ['webpage']
+            }
+        }
+    }
+    if cookie_opts:
+        opts.update(cookie_opts)
+        
+    result = {"vid": vid, "cookie_opts": cookie_opts}
     try:
-        api = YouTubeTranscriptApi(http_client=session)
-        t_list = api.list(vid)
-        result["tracks"] = [{"code": t.language_code, "lang": t.language, "gen": t.is_generated} for t in t_list]
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
+            caps = info.get('automatic_captions') or {}
+            subs = info.get('subtitles') or {}
+            all_caps = subs if subs else caps
+            result["caps_count"] = len(all_caps)
+            result["caps_keys"] = list(all_caps.keys())
+            track = all_caps.get('en') or all_caps.get('en-orig') or list(all_caps.values())[0]
+            fmt = next((f for f in track if f.get('ext') == 'json3'), track[0])
+            raw = ydl.urlopen(fmt['url']).read()
+            data = json.loads(raw.decode('utf-8'))
+            words = []
+            for ev in data.get('events', []):
+                for s in ev.get('segs', []):
+                    if s.get('utf8'): words.append(s['utf8'])
+            text = ' '.join(words)
+            result["success"] = True
+            result["length"] = len(text)
+            result["sample"] = text[:150]
     except Exception as e:
-        result["api_error"] = str(e)
-        result["api_trace"] = traceback.format_exc()
+        result["error"] = str(e)
+        result["trace"] = traceback.format_exc()
         
     return result
 
@@ -148,7 +174,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "3.5.0-debug",
+        "version": "3.6.0-skipweb",
         "timestamp": time.time()
     }
 
