@@ -14,7 +14,6 @@ from app.config import DOWNLOAD_DIR
 CHROME_TARGET = None
 
 def get_cookie_file() -> Optional[str]:
-    """Detect path to cookies.txt or create from YOUTUBE_COOKIES environment variable."""
     search_dirs = [
         Path("."),
         Path("/app"),
@@ -102,7 +101,6 @@ def extract_youtube_id(url: str) -> Optional[str]:
     return None
 
 def fetch_video_title(video_id: str) -> str:
-    """Fetch video title using lightning-fast YouTube oEmbed (no auth / no rate limits)."""
     try:
         url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
         r = requests.get(url, timeout=4)
@@ -113,7 +111,6 @@ def fetch_video_title(video_id: str) -> str:
     return "YouTube Video"
 
 def create_authenticated_session(proxy: Optional[str] = None) -> requests.Session:
-    """Create requests session loaded with YouTube authentication cookies & headers."""
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
@@ -125,8 +122,8 @@ def create_authenticated_session(proxy: Optional[str] = None) -> requests.Sessio
             cj = MozillaCookieJar(c_file)
             cj.load(ignore_discard=True, ignore_expires=True)
             session.cookies = cj
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Cookies load error]: {e}")
     if proxy:
         session.proxies = {'http': proxy, 'https': proxy}
     return session
@@ -172,10 +169,6 @@ def translate_paragraph(text: str, target_lang: str) -> str:
     return " ".join(translated_chunks)
 
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
-    """
-    High-speed, authentic speech transcript extractor.
-    Extracts purely speech text within 1-2 seconds with zero disk downloads.
-    """
     video_id = extract_youtube_id(url)
     if not video_id:
         raise ValueError("Invalid YouTube URL. Please enter a valid YouTube video link.")
@@ -184,12 +177,16 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     original_paragraph = ""
     detected_lang = "en"
     detected_transcript_obj = None
+    debug_logs = []
 
     candidates = [None] + PROXIES_POOL
 
     for proxy in candidates:
+        p_name = proxy.split('@')[-1] if proxy else "DIRECT"
         try:
             session = create_authenticated_session(proxy=proxy)
+            c_file = get_cookie_file()
+            debug_logs.append(f"{p_name}: c_file={bool(c_file)}")
             api = YouTubeTranscriptApi(http_client=session)
             transcript_list = api.list(video_id)
 
@@ -226,13 +223,12 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                 original_paragraph = text.strip()
                 if original_paragraph:
                     break
-        except (NoTranscriptFound, TranscriptsDisabled, VideoUnavailable):
-            break
-        except Exception:
+        except Exception as e:
+            debug_logs.append(f"{p_name}: err={type(e).__name__} ({str(e)[:60]})")
             continue
 
     if not original_paragraph:
-        raise ValueError("No speech transcript or subtitles are available for this video.")
+        raise ValueError(f"No speech transcript or subtitles are available for this video. Details: {' | '.join(debug_logs)}")
 
     original_lang_name = LANGUAGES.get(detected_lang, detected_lang.upper())
     current_paragraph = original_paragraph
