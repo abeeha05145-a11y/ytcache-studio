@@ -105,6 +105,33 @@ async def serve_index():
     }
     return HTMLResponse(content=content, headers=headers)
 
+@app.get("/api/test-trans")
+def test_trans(url: str = "https://youtu.be/TpQLKdP5Nec"):
+    import traceback
+    import requests
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from app.transcript import extract_youtube_id, get_cookie_jar
+    vid = extract_youtube_id(url)
+    cj = get_cookie_jar()
+    session = requests.Session()
+    if cj:
+        session.cookies = cj
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+    })
+    
+    result = {"cj_len": len(list(cj)) if cj else 0}
+    try:
+        api = YouTubeTranscriptApi(http_client=session)
+        t_list = api.list(vid)
+        result["tracks"] = [{"code": t.language_code, "lang": t.language, "gen": t.is_generated} for t in t_list]
+    except Exception as e:
+        result["api_error"] = str(e)
+        result["api_trace"] = traceback.format_exc()
+        
+    return result
+
 @app.get("/api/diag")
 def diag():
     from app.downloader import get_cookie_opts
@@ -121,7 +148,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "3.4.0-diag",
+        "version": "3.5.0-debug",
         "timestamp": time.time()
     }
 
