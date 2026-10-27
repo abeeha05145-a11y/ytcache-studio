@@ -112,11 +112,14 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         'no_warnings': True,
         'extract_flat': False,
         'skip_download': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['visionos']
+            }
+        }
     }
     if cookie_opts:
         ydl_opts.update(cookie_opts)
-    else:
-        ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
     info = None
     last_err = None
@@ -374,11 +377,14 @@ def start_download_task(
         'concurrent_fragment_downloads': 10,
         'buffersize': 1024 * 1024,
         'http_chunk_size': 10485760,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['visionos']
+            }
+        }
     }
     if cookie_opts:
         ydl_opts.update(cookie_opts)
-    else:
-        ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
     try:
         if download_type == 'audio':
