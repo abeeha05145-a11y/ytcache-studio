@@ -110,6 +110,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
+        "version": "3.2.0-cloud",
         "timestamp": time.time()
     }
 
