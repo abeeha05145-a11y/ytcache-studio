@@ -856,6 +856,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!resp.ok) {
         throw new Error(data.detail || data.error || "Unable to retrieve video information.");
       }
+      if (!data || typeof data !== 'object') {
+        throw new Error("Unable to parse video details from YouTube. Please try another video.");
+      }
 
       currentVideoData = data;
       renderDownloaderSection(data);
@@ -909,6 +912,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderDownloaderSection(data) {
+    if (!data) return;
     if (dlCardThumbnail) dlCardThumbnail.src = data.thumbnail || '';
     if (dlCardTitle) dlCardTitle.textContent = data.title || 'YouTube Video';
     if (dlCardUploader) dlCardUploader.textContent = data.uploader || 'Creator';
