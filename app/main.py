@@ -126,6 +126,39 @@ async def debug_env():
         "c_preview": c_preview
     }
 
+@app.get("/api/test-transcript")
+async def test_transcript():
+    import yt_dlp
+    import requests
+    opts = {
+        'quiet': True,
+        'skip_download': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android'],
+                'player_skip': ['webpage', 'configs']
+            }
+        }
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info('https://www.youtube.com/watch?v=TpQLKdP5Nec', download=False)
+            caps = info.get('automatic_captions', {}).get('en', [])
+            fmt = next((f for f in caps if f.get('ext') == 'json3'), None) or (caps[0] if caps else None)
+            if not fmt:
+                return {'error': 'No caption format found', 'auto_keys': list(info.get('automatic_captions', {}).keys())}
+            r = requests.get(fmt.get('url'), headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
+            data = r.json()
+            words = []
+            for ev in data.get('events', []):
+                for s in ev.get('segs', []):
+                    t = s.get('utf8', '').strip()
+                    if t and t != '\n':
+                        words.append(t)
+            return {'success': True, 'title': info.get('title'), 'sample': ' '.join(words[:30])}
+    except Exception as e:
+        return {'error': str(e)}
+
 @app.get("/api/health")
 async def health_check():
     return {
