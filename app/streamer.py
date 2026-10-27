@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, Optional
 import yt_dlp
 import asyncio
-from app.downloader import get_cookie_opts, normalize_youtube_url, clean_filename
+from app.downloader import get_cookie_opts, normalize_youtube_url, clean_filename, get_cached_metadata, PRIMARY_PROXY, PROXIES_POOL
 
 async def create_media_stream(
     url: str,
@@ -15,31 +15,42 @@ async def create_media_stream(
 ) -> tuple[AsyncGenerator[bytes, None], str, str]:
     """
     Zero-disk piped streaming engine.
-    Fetches Google CDN media URLs and streams real-time fragmented MP4 or MP3 directly to user's browser.
+    Streams media in real-time from YouTube CDN directly to user's browser.
     Server disk space used: EXACTLY 0 MB.
     """
     clean_url = normalize_youtube_url(url)
-    cookie_opts = get_cookie_opts()
     
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['visionos']
+    # 1. Check in-memory metadata cache for instant retrieval
+    cached = get_cached_metadata(clean_url)
+    info = cached.get('raw_info') if cached else None
+
+    if not info:
+        cookie_opts = get_cookie_opts()
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'socket_timeout': 6,
+            'proxy': PRIMARY_PROXY,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['visionos']
+                }
             }
         }
-    }
-    if cookie_opts:
-        ydl_opts.update(cookie_opts)
+        if cookie_opts:
+            ydl_opts.update(cookie_opts)
 
-    # 1. Extract metadata and direct CDN stream URLs
-    def _extract():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(clean_url, download=False)
+        def _extract():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(clean_url, download=False)
 
-    info = await asyncio.to_thread(_extract)
+        try:
+            info = await asyncio.to_thread(_extract)
+        except Exception:
+            ydl_opts['proxy'] = PROXIES_POOL[1]
+            info = await asyncio.to_thread(_extract)
+
     if not info:
         raise ValueError("Could not extract media streams from YouTube.")
 
@@ -47,7 +58,6 @@ async def create_media_stream(
     fmts = info.get('formats', [])
 
     if download_type == 'audio':
-        # Audio stream
         a_fmts = [f for f in fmts if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url')]
         if not a_fmts:
             raise ValueError("No audio streams found for this video.")
@@ -72,7 +82,6 @@ async def create_media_stream(
         ]
 
     elif download_type == 'video_only':
-        # Video visuals without audio
         v_fmts = [f for f in fmts if f.get('vcodec') != 'none' and f.get('url')]
         if height:
             matching = [f for f in v_fmts if (f.get('height') or 0) <= height or (f.get('width') or 0) <= height]
@@ -99,7 +108,6 @@ async def create_media_stream(
         ]
 
     else:
-        # Full Video with Sound (Mux on-the-fly)
         v_fmts = [f for f in fmts if f.get('vcodec') != 'none' and f.get('url')]
         a_fmts = [f for f in fmts if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url')]
         
