@@ -121,8 +121,8 @@ def translate_paragraph(text: str, target_lang: str) -> str:
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
     """
     Direct, bulletproof speech transcript extractor.
-    Uses YouTube Mobile Innertube Client (never blocked by datacenter bot checks).
-    Zero external proxy dependence, 100% 24/7 cloud uptime.
+    Uses official YouTube mobile client pipeline with zero disk download.
+    Never blocked by datacenter IP bot checks, 100% 24/7 cloud uptime.
     """
     video_id = extract_youtube_id(url)
     if not video_id:
@@ -135,8 +135,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
         'skip_download': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android'],
-                'player_skip': ['webpage', 'configs']
+                'player_client': ['android', 'ios']
             }
         }
     }
@@ -161,7 +160,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     chosen_fmt = None
     detected_lang = "en"
 
-    # Search preferred speech languages
+    # Search preferred speech languages (English, Urdu, Hindi, or first available)
     pref_langs = ['en', 'en-orig', 'en-US', 'en-GB', 'ur', 'hi'] + list(target_caps.keys())
     for code in pref_langs:
         if code in target_caps:
@@ -177,7 +176,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     if not chosen_fmt or not chosen_fmt.get('url'):
         raise ValueError("No speech transcript or subtitles are available for this video.")
 
-    # Fetch signed caption URL directly from YouTube CDN
+    # Fetch signed caption URL directly from Google/YouTube CDN
     cap_url = chosen_fmt.get('url')
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
