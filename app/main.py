@@ -105,12 +105,23 @@ async def serve_index():
     }
     return HTMLResponse(content=content, headers=headers)
 
+@app.get("/api/diag")
+def diag():
+    from app.downloader import get_cookie_opts
+    opts = get_cookie_opts()
+    app_files = [f.name for f in Path("/app").iterdir()] if Path("/app").exists() else []
+    return {
+        "cookie_opts": opts,
+        "app_files": app_files,
+        "env_cookie_len": len(os.getenv("YOUTUBE_COOKIES", ""))
+    }
+
 @app.get("/api/health")
 async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "3.3.0-live",
+        "version": "3.4.0-diag",
         "timestamp": time.time()
     }
 
