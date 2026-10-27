@@ -207,6 +207,34 @@ async def get_progress_endpoint(job_id: str):
 
     return resp
 
+@app.get("/api/stream-direct")
+async def stream_direct_endpoint(
+    url: str,
+    type: str = "video",
+    height: Optional[int] = None,
+    audio_format: Optional[str] = None
+):
+    """
+    On-the-fly streaming endpoint (0 MB server disk storage used).
+    Streams media in real-time from YouTube CDN directly to the browser.
+    """
+    from app.streamer import create_media_stream
+    try:
+        generator, filename, media_type = await create_media_stream(
+            url=url,
+            download_type=type,
+            height=height,
+            audio_format=audio_format
+        )
+        encoded_filename = urllib.parse.quote(filename)
+        headers = {
+            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{encoded_filename}",
+            "Cache-Control": "no-cache",
+        }
+        return StreamingResponse(generator, media_type=media_type, headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/api/stream/{job_id}")
 async def stream_file_endpoint(job_id: str):
     """
