@@ -43,6 +43,20 @@ def get_cookie_opts() -> Dict[str, Any]:
             pass
     return {}
 
+PROXIES_POOL = [
+    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
+    "http://dxgwkmac:ul130busmnzq@64.137.10.153:5803",
+    "http://dxgwkmac:ul130busmnzq@38.154.185.97:6370",
+    "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361",
+    "http://dxgwkmac:ul130busmnzq@45.38.107.97:6014"
+]
+
+def get_proxy_list() -> List[Optional[str]]:
+    env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+    if env_p and len(env_p.strip()) > 5:
+        return [env_p.strip()] + PROXIES_POOL
+    return list(PROXIES_POOL)
+
 from app.config import DOWNLOAD_DIR
 
 LANGUAGES = {
@@ -198,9 +212,18 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                     'player_skip': ['webpage', 'configs'],
                 }
             }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
-            video_title = info.get('title', 'YouTube Video')
+        proxies_to_try = get_proxy_list() + [None]
+        for p in proxies_to_try:
+            run_opts = dict(ydl_opts)
+            if p:
+                run_opts['proxy'] = p
+            try:
+                with yt_dlp.YoutubeDL(run_opts) as ydl:
+                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                    video_title = info.get('title', 'YouTube Video')
+                    break
+            except Exception:
+                continue
 
         # Find downloaded .vtt files
         vtt_files = list(DOWNLOAD_DIR.glob(f"cap_{job_id}.*.vtt"))
