@@ -105,6 +105,27 @@ async def serve_index():
     }
     return HTMLResponse(content=content, headers=headers)
 
+@app.get("/api/debug-env")
+async def debug_env():
+    from app.transcript import get_cookie_opts
+    import os
+    files_in_cur = [p.name for p in Path(".").glob("*")]
+    files_in_app = [p.name for p in Path("/app").glob("*")] if Path("/app").exists() else []
+    c_opts = get_cookie_opts()
+    c_preview = ""
+    if "cookiefile" in c_opts:
+        try:
+            c_preview = Path(c_opts["cookiefile"]).read_text()[:60]
+        except Exception as e:
+            c_preview = str(e)
+    return {
+        "cwd": str(Path(".").resolve()),
+        "files_in_cur": files_in_cur,
+        "files_in_app": files_in_app,
+        "cookie_opts": c_opts,
+        "c_preview": c_preview
+    }
+
 @app.get("/api/health")
 async def health_check():
     return {
