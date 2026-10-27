@@ -1,13 +1,11 @@
 import re
 import json
 import urllib.parse
-import http.cookiejar
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import requests
 import yt_dlp
 import os
-from youtube_transcript_api import YouTubeTranscriptApi
 from app.config import DOWNLOAD_DIR
 
 CHROME_TARGET = None
@@ -45,10 +43,7 @@ def extract_youtube_id(url: str) -> Optional[str]:
             return match.group(1)
     return None
 
-def get_cookie_jar() -> Optional[http.cookiejar.MozillaCookieJar]:
-    """
-    Loads netscape cookie file into a MozillaCookieJar with session and secure cookies intact.
-    """
+def get_cookie_opts() -> Dict[str, Any]:
     search_dirs = [
         Path("/app"),
         Path("."),
@@ -65,18 +60,11 @@ def get_cookie_jar() -> Optional[http.cookiejar.MozillaCookieJar]:
         for name in cookie_names:
             p = d / name
             if p.exists() and p.stat().st_size > 0:
-                try:
-                    cj = http.cookiejar.MozillaCookieJar(str(p.resolve()))
-                    cj.load(ignore_discard=True, ignore_expires=True)
-                    return cj
-                except Exception:
-                    pass
+                return {'cookiefile': str(p.resolve())}
         try:
             for p in d.glob("*cookie*.txt"):
                 if p.exists() and p.stat().st_size > 0:
-                    cj = http.cookiejar.MozillaCookieJar(str(p.resolve()))
-                    cj.load(ignore_discard=True, ignore_expires=True)
-                    return cj
+                    return {'cookiefile': str(p.resolve())}
         except Exception:
             pass
     
@@ -86,12 +74,10 @@ def get_cookie_jar() -> Optional[http.cookiejar.MozillaCookieJar]:
         try:
             content = env_cookies.strip().replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '\t')
             tmp_path.write_text(content, encoding="utf-8")
-            cj = http.cookiejar.MozillaCookieJar(str(tmp_path.resolve()))
-            cj.load(ignore_discard=True, ignore_expires=True)
-            return cj
+            return {'cookiefile': str(tmp_path.resolve())}
         except Exception:
             pass
-    return None
+    return {}
 
 def translate_paragraph(text: str, target_lang: str) -> str:
     if not text.strip() or target_lang in ["original", "default"]:
@@ -135,8 +121,9 @@ def translate_paragraph(text: str, target_lang: str) -> str:
 
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
     """
-    Fast and bulletproof speech transcript extractor.
-    Combines YouTube Transcript API with official authenticated cookie session and Google oEmbed.
+    Bulletproof speech transcript extractor.
+    Uses official YouTube Android/Mobile Innertube pipeline with zero disk download.
+    Skips desktop webpage to completely eliminate cloud/datacenter IP bot challenges.
     """
     video_id = extract_youtube_id(url)
     if not video_id:
@@ -152,104 +139,121 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     except Exception:
         pass
 
-    # 2. Build authenticated HTTP session with cookies to bypass datacenter IP restrictions
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-    })
-    cj = get_cookie_jar()
-    if cj:
-        session.cookies = cj
+    cookie_opts = get_cookie_opts()
+    
+    # Android client with player_skip: ['webpage'] never triggers datacenter bot check
+    clients_to_try = [
+        {'player_client': ['android'], 'player_skip': ['webpage']},
+        {'player_client': ['android', 'ios'], 'player_skip': ['webpage']},
+        {'player_client': ['ios'], 'player_skip': ['webpage']},
+        {'player_client': ['android']}
+    ]
 
-    raw_text = ""
-    detected_lang = "en"
+    info = None
+    ydl_instance = None
     last_err = None
 
-    # 3. Primary extraction: YouTubeTranscriptApi with authenticated session
-    try:
-        api = YouTubeTranscriptApi(http_client=session)
-        t_list = api.list(video_id)
-        
-        pref_langs = []
-        if target_lang and target_lang not in ["original", "default"]:
-            pref_langs.append(target_lang)
-        pref_langs += ['en', 'en-orig', 'en-US', 'ur', 'hi']
-
-        fetched_obj = None
-        for lang_code in pref_langs:
-            try:
-                fetched_obj = t_list.find_transcript([lang_code])
-                detected_lang = fetched_obj.language_code.split('-')[0]
-                break
-            except Exception:
-                continue
-
-        if not fetched_obj:
-            for t in t_list:
-                fetched_obj = t
-                detected_lang = t.language_code.split('-')[0]
-                break
-
-        if fetched_obj:
-            items = fetched_obj.fetch()
-            words = []
-            for item in items:
-                if isinstance(item, dict):
-                    w = item.get('text', '')
-                elif hasattr(item, 'text'):
-                    w = item.text
-                else:
-                    w = str(item)
-                if w:
-                    words.append(w)
-            raw_text = " ".join(words)
-    except Exception as e:
-        last_err = e
-
-    # 4. Secondary fallback: yt-dlp timedtext extraction
-    if not raw_text:
-        try:
-            ydl_opts: Dict[str, Any] = {
-                'quiet': True,
-                'no_warnings': True,
-                'skip_download': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'format': 'all/none',
-                'extractor_args': {'youtube': {'player_client': ['android']}},
+    for config in clients_to_try:
+        ydl_opts: Dict[str, Any] = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'format': 'all/none',
+            'extractor_args': {
+                'youtube': config
             }
-            if cj and hasattr(cj, 'filename') and cj.filename:
-                ydl_opts['cookiefile'] = cj.filename
+        }
+        if cookie_opts:
+            ydl_opts.update(cookie_opts)
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                if not video_title or video_title == "YouTube Video":
-                    video_title = info.get('title', video_title)
-                
-                subs = info.get('subtitles') or {}
-                auto = info.get('automatic_captions') or {}
-                caps = subs if subs else auto
-
-                if caps:
-                    track = caps.get('en') or caps.get('ur') or caps.get('hi') or list(caps.values())[0]
-                    chosen_fmt = next((f for f in track if f.get('ext') == 'json3'), track[0])
-                    raw_bytes = ydl.urlopen(chosen_fmt['url']).read()
-                    data = json.loads(raw_bytes.decode('utf-8', errors='ignore'))
-                    words = []
-                    for ev in data.get('events', []):
-                        for s in ev.get('segs', []):
-                            if s.get('utf8'):
-                                words.append(s['utf8'])
-                    raw_text = " ".join(words)
+        try:
+            ydl = yt_dlp.YoutubeDL(ydl_opts)
+            cand_info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if cand_info and (cand_info.get('subtitles') or cand_info.get('automatic_captions')):
+                info = cand_info
+                ydl_instance = ydl
+                break
         except Exception as e:
-            if not last_err:
-                last_err = e
+            last_err = e
+            continue
 
-    if not raw_text:
+    if not info or not ydl_instance:
+        err_msg = str(last_err) if last_err else "No video metadata found."
+        raise ValueError(f"Could not connect to YouTube servers: {err_msg}")
+
+    if not video_title or video_title == "YouTube Video":
+        video_title = info.get('title') or video_title
+
+    subs = info.get('subtitles') or {}
+    auto = info.get('automatic_captions') or {}
+    target_caps = subs if subs else auto
+
+    if not target_caps:
         raise ValueError("No speech transcript or subtitles found for this video. YouTube may not have auto-captions available.")
 
-    # 5. Clean text: remove sound effects, music notes, bracketed text, formatting noise
+    chosen_fmt = None
+    detected_lang = "en"
+
+    # Search preferred speech languages: user requested target_lang, English, Urdu, Hindi, or first available
+    pref_langs = []
+    if target_lang and target_lang not in ["original", "default"]:
+        pref_langs.append(target_lang)
+    pref_langs += ['en', 'en-orig', 'en-US', 'en-GB', 'ur', 'hi'] + list(target_caps.keys())
+
+    for code in pref_langs:
+        if code in target_caps:
+            detected_lang = code.split('-')[0]
+            fmts = target_caps[code]
+            chosen_fmt = (
+                next((f for f in fmts if f.get('ext') == 'json3'), None) or
+                next((f for f in fmts if f.get('ext') == 'vtt'), None) or
+                fmts[0]
+            )
+            break
+
+    if not chosen_fmt or not chosen_fmt.get('url'):
+        raise ValueError("No speech transcript or subtitles are available for this video.")
+
+    # Fetch timedtext using yt_dlp's internal authenticated session
+    cap_url = chosen_fmt.get('url')
+    try:
+        raw_bytes = ydl_instance.urlopen(cap_url).read()
+        raw_content = raw_bytes.decode('utf-8', errors='ignore')
+    except Exception as e:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        }
+        try:
+            resp = requests.get(cap_url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                raw_content = resp.text
+            else:
+                raise ValueError(f"YouTube caption server responded with error code {resp.status_code}.")
+        except Exception:
+            raise ValueError(f"Failed to download subtitles stream: {e}")
+
+    raw_text = ""
+    if chosen_fmt.get('ext') == 'json3':
+        try:
+            jdata = json.loads(raw_content)
+            events = jdata.get('events', [])
+            words = []
+            for ev in events:
+                for seg in ev.get('segs', []):
+                    w = seg.get('utf8', '').strip()
+                    if w and w != '\n':
+                        words.append(w)
+            raw_text = ' '.join(words)
+        except Exception as e:
+            raise ValueError(f"Failed to parse caption JSON: {e}")
+    else:
+        # VTT / SRT format
+        t = re.sub(r'<[^>]+>', '', raw_content)
+        t = re.sub(r'(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}[^\r\n]*', '', t)
+        raw_text = t
+
     raw_text = re.sub(r'\[.*?\]', '', raw_text)
     raw_text = re.sub(r'\(.*?\)', '', raw_text)
     raw_text = re.sub(r'[♪♫#]+', '', raw_text)
@@ -264,7 +268,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     current_lang = detected_lang
     current_lang_name = f"{original_lang_name} (Original)"
 
-    # 6. Translate if target language is requested and different
+    # Translate if target language is requested and different
     if target_lang not in ["original", "default", detected_lang]:
         try:
             trans = translate_paragraph(original_paragraph, target_lang)
