@@ -42,11 +42,22 @@ YOUTUBE_EXTRACTOR_ARGS = {
     }
 }
 
+PROXIES_POOL = [
+    "http://jwdqftrd:qcqth1klolmb@45.38.107.97:6014",
+    "http://jwdqftrd:qcqth1klolmb@64.137.96.74:6641",
+    "http://jwdqftrd:qcqth1klolmb@198.23.243.226:6361",
+    "http://jwdqftrd:qcqth1klolmb@38.154.185.97:6370",
+    "http://jwdqftrd:qcqth1klolmb@84.247.60.125:6095",
+    "http://jwdqftrd:qcqth1klolmb@191.96.254.138:6185",
+    "http://jwdqftrd:qcqth1klolmb@198.46.161.42:5092",
+    "http://jwdqftrd:qcqth1klolmb@64.137.10.153:5803"
+]
+
 def get_proxy_list() -> List[Optional[str]]:
     env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
     if env_p and len(env_p.strip()) > 5:
-        return [env_p.strip(), None]
-    return [None]
+        return [env_p.strip()] + PROXIES_POOL + [None]
+    return PROXIES_POOL + [None]
 
 def get_cookie_opts() -> Dict[str, Any]:
     """Detect cookies.txt / www.youtube.com_cookies.txt or YOUTUBE_COOKIES env var."""
