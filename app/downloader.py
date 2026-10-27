@@ -155,161 +155,161 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         else:
             raise ValueError(f"Could not fetch video info: {err_msg}")
 
-        formats = info.get('formats', [])
-        duration = info.get('duration', 0)
+    formats = info.get('formats', [])
+    duration = info.get('duration', 0)
+    
+    # Target standard resolutions we look for
+    standard_res = [
+        {"height": 2160, "name": "4K Ultra HD", "badge": "4K"},
+        {"height": 1440, "name": "2K Quad HD", "badge": "2K"},
+        {"height": 1080, "name": "1080p Full HD", "badge": "FHD"},
+        {"height": 720, "name": "720p HD", "badge": "HD"},
+        {"height": 480, "name": "480p SD", "badge": "SD"},
+        {"height": 360, "name": "360p Medium", "badge": "360p"},
+        {"height": 240, "name": "240p Low", "badge": "240p"},
+        {"height": 144, "name": "144p Lowest", "badge": "144p"},
+    ]
+
+    # Find best audio stream for size estimation
+    audio_formats = [
+        f for f in formats 
+        if f.get('vcodec') == 'none' and f.get('acodec') != 'none'
+    ]
+    best_audio = max(audio_formats, key=lambda f: f.get('tbr', 0) or f.get('abr', 0) or 0) if audio_formats else None
+    best_audio_size = best_audio.get('filesize') or best_audio.get('filesize_approx') if best_audio else None
+    if not best_audio_size and duration and best_audio:
+        abr = best_audio.get('abr') or 128
+        best_audio_size = (abr * 1024 * duration) / 8
+
+    available_videos = []
+    available_video_only = []
+    seen_heights = set()
+
+    for res in standard_res:
+        target_h = res["height"]
         
-        # Target standard resolutions we look for
-        standard_res = [
-            {"height": 2160, "name": "4K Ultra HD", "badge": "4K"},
-            {"height": 1440, "name": "2K Quad HD", "badge": "2K"},
-            {"height": 1080, "name": "1080p Full HD", "badge": "FHD"},
-            {"height": 720, "name": "720p HD", "badge": "HD"},
-            {"height": 480, "name": "480p SD", "badge": "SD"},
-            {"height": 360, "name": "360p Medium", "badge": "360p"},
-            {"height": 240, "name": "240p Low", "badge": "240p"},
-            {"height": 144, "name": "144p Lowest", "badge": "144p"},
-        ]
-
-        # Find best audio stream for size estimation
-        audio_formats = [
+        # Find candidate formats that match this height (or close to it)
+        matching_formats = [
             f for f in formats 
-            if f.get('vcodec') == 'none' and f.get('acodec') != 'none'
+            if f.get('height') and f.get('vcodec') != 'none' and f.get('height') == target_h
         ]
-        best_audio = max(audio_formats, key=lambda f: f.get('tbr', 0) or f.get('abr', 0) or 0) if audio_formats else None
-        best_audio_size = best_audio.get('filesize') or best_audio.get('filesize_approx') if best_audio else None
-        if not best_audio_size and duration and best_audio:
-            abr = best_audio.get('abr') or 128
-            best_audio_size = (abr * 1024 * duration) / 8
 
-        available_videos = []
-        available_video_only = []
-        seen_heights = set()
+        if not matching_formats:
+            # Look for formats within height range (e.g. 2160 might be 2160, etc.)
+            continue
 
-        for res in standard_res:
-            target_h = res["height"]
-            
-            # Find candidate formats that match this height (or close to it)
-            matching_formats = [
-                f for f in formats 
-                if f.get('height') and f.get('vcodec') != 'none' and f.get('height') == target_h
-            ]
+        # Pick format with best fps and bitrate
+        best_video_fmt = max(
+            matching_formats, 
+            key=lambda f: (f.get('fps', 0) or 0, f.get('vbr', 0) or f.get('tbr', 0) or 0)
+        )
 
-            if not matching_formats:
-                # Look for formats within height range (e.g. 2160 might be 2160, etc.)
-                continue
+        # Calculate estimated size
+        video_size = best_video_fmt.get('filesize') or best_video_fmt.get('filesize_approx')
+        if not video_size and duration:
+            vbr = best_video_fmt.get('vbr') or best_video_fmt.get('tbr') or 0
+            if vbr:
+                video_size = (vbr * 1024 * duration) / 8
 
-            # Pick format with best fps and bitrate
-            best_video_fmt = max(
-                matching_formats, 
-                key=lambda f: (f.get('fps', 0) or 0, f.get('vbr', 0) or f.get('tbr', 0) or 0)
-            )
-
-            # Calculate estimated size
-            video_size = best_video_fmt.get('filesize') or best_video_fmt.get('filesize_approx')
-            if not video_size and duration:
-                vbr = best_video_fmt.get('vbr') or best_video_fmt.get('tbr') or 0
-                if vbr:
-                    video_size = (vbr * 1024 * duration) / 8
-
-            total_estimated_size = None
-            needs_merge = best_video_fmt.get('acodec') == 'none'
-            if needs_merge:
-                if video_size and best_audio_size:
-                    total_estimated_size = video_size + best_audio_size
-                elif video_size:
-                    total_estimated_size = video_size
-            else:
+        total_estimated_size = None
+        needs_merge = best_video_fmt.get('acodec') == 'none'
+        if needs_merge:
+            if video_size and best_audio_size:
+                total_estimated_size = video_size + best_audio_size
+            elif video_size:
                 total_estimated_size = video_size
+        else:
+            total_estimated_size = video_size
 
-            # Full Video with Sound
-            available_videos.append({
-                "format_id": best_video_fmt.get('format_id'),
-                "resolution": f"{target_h}p",
-                "height": target_h,
-                "name": res["name"],
-                "badge": res["badge"],
-                "fps": best_video_fmt.get('fps') or 30,
-                "ext": "mp4",
-                "needs_merge": needs_merge,
-                "estimated_size": format_bytes(total_estimated_size) if total_estimated_size else "Available",
-                "approx_bytes": total_estimated_size or 0
-            })
+        # Full Video with Sound
+        available_videos.append({
+            "format_id": best_video_fmt.get('format_id'),
+            "resolution": f"{target_h}p",
+            "height": target_h,
+            "name": res["name"],
+            "badge": res["badge"],
+            "fps": best_video_fmt.get('fps') or 30,
+            "ext": "mp4",
+            "needs_merge": needs_merge,
+            "estimated_size": format_bytes(total_estimated_size) if total_estimated_size else "Available",
+            "approx_bytes": total_estimated_size or 0
+        })
 
-            # Video Visual Only (Mute / No Audio)
-            available_video_only.append({
-                "format_id": best_video_fmt.get('format_id'),
-                "resolution": f"{target_h}p",
-                "height": target_h,
-                "name": f"{res['name']} (Visuals Only)",
-                "badge": res["badge"],
-                "fps": best_video_fmt.get('fps') or 30,
-                "ext": "mp4",
-                "needs_merge": False,
-                "estimated_size": format_bytes(video_size) if video_size else "Available",
-                "approx_bytes": video_size or 0
-            })
-            seen_heights.add(target_h)
+        # Video Visual Only (Mute / No Audio)
+        available_video_only.append({
+            "format_id": best_video_fmt.get('format_id'),
+            "resolution": f"{target_h}p",
+            "height": target_h,
+            "name": f"{res['name']} (Visuals Only)",
+            "badge": res["badge"],
+            "fps": best_video_fmt.get('fps') or 30,
+            "ext": "mp4",
+            "needs_merge": False,
+            "estimated_size": format_bytes(video_size) if video_size else "Available",
+            "approx_bytes": video_size or 0
+        })
+        seen_heights.add(target_h)
 
-        # Fallback for vertical videos (Shorts) or non-standard resolutions
-        if not available_videos:
-            for f in formats:
-                if f.get('vcodec') != 'none':
-                    h = f.get('height') or f.get('width') or 360
-                    display_res = f"{min(f.get('height', h), f.get('width', h))}p" if (f.get('height') and f.get('width')) else f"{h}p"
-                    needs_merge = f.get('acodec') == 'none'
-                    v_size = f.get('filesize') or f.get('filesize_approx')
-                    tot_size = (v_size + best_audio_size) if (needs_merge and v_size and best_audio_size) else v_size
-                    available_videos.append({
-                        "format_id": f.get('format_id') or "best",
-                        "resolution": display_res,
-                        "height": h,
-                        "name": f"HD Video ({display_res})" if h >= 720 else f"Standard Video ({display_res})",
-                        "badge": "HD" if h >= 720 else "SD",
-                        "fps": f.get('fps') or 30,
-                        "ext": f.get('ext') or "mp4",
-                        "needs_merge": needs_merge,
-                        "estimated_size": format_bytes(tot_size),
-                        "approx_bytes": tot_size or 0
-                    })
+    # Fallback for vertical videos (Shorts) or non-standard resolutions
+    if not available_videos:
+        for f in formats:
+            if f.get('vcodec') != 'none':
+                h = f.get('height') or f.get('width') or 360
+                display_res = f"{min(f.get('height', h), f.get('width', h))}p" if (f.get('height') and f.get('width')) else f"{h}p"
+                needs_merge = f.get('acodec') == 'none'
+                v_size = f.get('filesize') or f.get('filesize_approx')
+                tot_size = (v_size + best_audio_size) if (needs_merge and v_size and best_audio_size) else v_size
+                available_videos.append({
+                    "format_id": f.get('format_id') or "best",
+                    "resolution": display_res,
+                    "height": h,
+                    "name": f"HD Video ({display_res})" if h >= 720 else f"Standard Video ({display_res})",
+                    "badge": "HD" if h >= 720 else "SD",
+                    "fps": f.get('fps') or 30,
+                    "ext": f.get('ext') or "mp4",
+                    "needs_merge": needs_merge,
+                    "estimated_size": format_bytes(tot_size),
+                    "approx_bytes": tot_size or 0
+                })
 
-        # Audio choices
-        available_audios = [
-            {
-                "format_id": "mp3_320",
-                "name": "MP3 High Quality",
-                "quality": "320 kbps",
-                "ext": "mp3",
-                "estimated_size": format_bytes((320 * 1024 * duration) / 8) if duration else "~10 MB"
-            },
-            {
-                "format_id": "mp3_192",
-                "name": "MP3 Standard Quality",
-                "quality": "192 kbps",
-                "ext": "mp3",
-                "estimated_size": format_bytes((192 * 1024 * duration) / 8) if duration else "~6 MB"
-            },
-            {
-                "format_id": "m4a_best",
-                "name": "M4A Original Audio",
-                "quality": "Original AAC",
-                "ext": "m4a",
-                "estimated_size": format_bytes(best_audio_size) if best_audio_size else "~5 MB"
-            }
-        ]
-
-        return {
-            "title": info.get('title', 'Unknown Title'),
-            "duration": duration,
-            "duration_formatted": format_duration(duration),
-            "thumbnail": info.get('thumbnail') or (info.get('thumbnails', [{}])[-1].get('url') if info.get('thumbnails') else None),
-            "uploader": info.get('uploader') or info.get('channel') or "YouTube Creator",
-            "view_count": f"{info.get('view_count', 0):,}" if info.get('view_count') is not None else "N/A",
-            "webpage_url": info.get('webpage_url', url),
-            "video_formats": available_videos,
-            "video_only_formats": available_video_only,
-            "audio_formats": available_audios,
-            "ffmpeg_installed": is_ffmpeg_available()
+    # Audio choices
+    available_audios = [
+        {
+            "format_id": "mp3_320",
+            "name": "MP3 High Quality",
+            "quality": "320 kbps",
+            "ext": "mp3",
+            "estimated_size": format_bytes((320 * 1024 * duration) / 8) if duration else "~10 MB"
+        },
+        {
+            "format_id": "mp3_192",
+            "name": "MP3 Standard Quality",
+            "quality": "192 kbps",
+            "ext": "mp3",
+            "estimated_size": format_bytes((192 * 1024 * duration) / 8) if duration else "~6 MB"
+        },
+        {
+            "format_id": "m4a_best",
+            "name": "M4A Original Audio",
+            "quality": "Original AAC",
+            "ext": "m4a",
+            "estimated_size": format_bytes(best_audio_size) if best_audio_size else "~5 MB"
         }
+    ]
+
+    return {
+        "title": info.get('title', 'Unknown Title'),
+        "duration": duration,
+        "duration_formatted": format_duration(duration),
+        "thumbnail": info.get('thumbnail') or (info.get('thumbnails', [{}])[-1].get('url') if info.get('thumbnails') else None),
+        "uploader": info.get('uploader') or info.get('channel') or "YouTube Creator",
+        "view_count": f"{info.get('view_count', 0):,}" if info.get('view_count') is not None else "N/A",
+        "webpage_url": info.get('webpage_url', url),
+        "video_formats": available_videos,
+        "video_only_formats": available_video_only,
+        "audio_formats": available_audios,
+        "ffmpeg_installed": is_ffmpeg_available()
+    }
 
 def start_download_task(
     job_id: str,
