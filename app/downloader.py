@@ -373,6 +373,9 @@ def start_download_task(
         'quiet': True,
         'no_warnings': True,
         'restrictfilenames': True,
+        'concurrent_fragment_downloads': 10,
+        'buffersize': 1024 * 1024,
+        'http_chunk_size': 10485760,
     }
     if cookie_opts:
         ydl_opts.update(cookie_opts)
@@ -410,10 +413,6 @@ def start_download_task(
                 ydl_opts['format'] = "bestvideo[vcodec^=avc]/bestvideo[ext=mp4]/bestvideo"
             
             ydl_opts['merge_output_format'] = 'mp4'
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegVideoRemuxer',
-                'preferedformat': 'mp4'
-            }]
         else:
             # Full Video WITH Sound (Default)
             # Prefer universally compatible H.264 (avc1) + AAC (mp4a)
@@ -435,10 +434,6 @@ def start_download_task(
                 )
             
             ydl_opts['merge_output_format'] = 'mp4'
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegVideoRemuxer',
-                'preferedformat': 'mp4'
-            }]
 
         info = None
         proxies_to_try = get_proxy_list() + [None]
@@ -457,28 +452,28 @@ def start_download_task(
         
         if not info:
             raise Exception("Failed to download video stream from YouTube servers.")
-            
-            # Find the actual generated file on disk
-            # Pattern: {DOWNLOAD_DIR}/{job_id}_*
-            matched_files = list(DOWNLOAD_DIR.glob(f"{job_id}_*"))
-            # Filter out temporary .part or .ytdl files
-            final_files = [f for f in matched_files if not f.name.endswith(('.part', '.ytdl', '.temp'))]
 
-            if not final_files:
-                raise Exception("Output file was not created by the downloader.")
+        # Find the actual generated file on disk
+        # Pattern: {DOWNLOAD_DIR}/{job_id}_*
+        matched_files = list(DOWNLOAD_DIR.glob(f"{job_id}_*"))
+        # Filter out temporary .part or .ytdl files
+        final_files = [f for f in matched_files if not f.name.endswith(('.part', '.ytdl', '.temp'))]
 
-            file_path = final_files[0]
-            # Strip job_id_ prefix for presentation
-            clean_display_name = file_path.name
-            if clean_display_name.startswith(f"{job_id}_"):
-                clean_display_name = clean_display_name[len(f"{job_id}_"):]
+        if not final_files:
+            raise Exception("Output file was not created by the downloader.")
 
-            job['status'] = 'completed'
-            job['percent'] = 100
-            job['message'] = "Download ready!"
-            job['file_path'] = str(file_path)
-            job['file_name'] = clean_display_name
-            job['file_size'] = format_bytes(file_path.stat().st_size)
+        file_path = final_files[0]
+        # Strip job_id_ prefix for presentation
+        clean_display_name = file_path.name
+        if clean_display_name.startswith(f"{job_id}_"):
+            clean_display_name = clean_display_name[len(f"{job_id}_"):]
+
+        job['status'] = 'completed'
+        job['percent'] = 100.0
+        job['message'] = "Download ready!"
+        job['file_path'] = str(file_path)
+        job['file_name'] = clean_display_name
+        job['file_size'] = format_bytes(file_path.stat().st_size)
 
     except Exception as e:
         job['status'] = 'error'
