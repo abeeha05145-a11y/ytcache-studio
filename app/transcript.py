@@ -7,7 +7,7 @@ import requests
 import yt_dlp
 import os
 from app.config import DOWNLOAD_DIR
-from app.downloader import get_proxy_list
+from app.downloader import get_proxy_list, get_cookie_opts
 
 CHROME_TARGET = None
 
@@ -43,42 +43,6 @@ def extract_youtube_id(url: str) -> Optional[str]:
         if match:
             return match.group(1)
     return None
-
-def get_cookie_opts() -> Dict[str, Any]:
-    search_dirs = [
-        Path("/app"),
-        Path("."),
-        Path(__file__).resolve().parent.parent,
-        Path(__file__).resolve().parent
-    ]
-    cookie_names = [
-        "www.youtube.com_cookies.txt",
-        "cookies.txt",
-        "youtube_cookies.txt",
-        "yt_cookies.txt"
-    ]
-    for d in search_dirs:
-        for name in cookie_names:
-            p = d / name
-            if p.exists() and p.stat().st_size > 0:
-                return {'cookiefile': str(p.resolve())}
-        try:
-            for p in d.glob("*cookie*.txt"):
-                if p.exists() and p.stat().st_size > 0:
-                    return {'cookiefile': str(p.resolve())}
-        except Exception:
-            pass
-    
-    env_cookies = os.getenv("YOUTUBE_COOKIES")
-    if env_cookies and len(env_cookies.strip()) > 10:
-        tmp_path = DOWNLOAD_DIR / "yt_cookies.txt"
-        try:
-            content = env_cookies.strip().replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '\t')
-            tmp_path.write_text(content, encoding="utf-8")
-            return {'cookiefile': str(tmp_path.resolve())}
-        except Exception:
-            pass
-    return {}
 
 def translate_paragraph(text: str, target_lang: str) -> str:
     if not text.strip() or target_lang in ["original", "default"]:
@@ -124,7 +88,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     """
     Bulletproof speech transcript extractor.
     Uses official YouTube Android/Mobile Innertube pipeline with zero disk download.
-    Skips desktop webpage to completely eliminate cloud/datacenter IP bot challenges.
+    Employs curl_cffi with Chrome impersonation + browser fallback to completely defeat 429 rate limits.
     """
     video_id = extract_youtube_id(url)
     if not video_id:
@@ -141,20 +105,19 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
         pass
 
     cookie_opts = get_cookie_opts()
-    
-    # Android client with player_skip: ['webpage'] never triggers datacenter bot check
+    proxies_to_try = get_proxy_list()
+
     clients_to_try = [
         {'player_client': ['android'], 'player_skip': ['webpage']},
-        {'player_client': ['android', 'ios'], 'player_skip': ['webpage']},
-        {'player_client': ['ios'], 'player_skip': ['webpage']},
-        {'player_client': ['android']}
+        {'player_client': ['android']},
+        {'player_client': ['android', 'ios']},
+        {'player_client': ['ios']}
     ]
 
     info = None
     ydl_instance = None
     last_err = None
 
-    proxies_to_try = get_proxy_list()
     for config in clients_to_try:
         for p in proxies_to_try:
             ydl_opts: Dict[str, Any] = {
@@ -223,23 +186,59 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     if not chosen_fmt or not chosen_fmt.get('url'):
         raise ValueError("No speech transcript or subtitles are available for this video.")
 
-    # Fetch timedtext using yt_dlp's internal authenticated session
     cap_url = chosen_fmt.get('url')
+    original_lang_name = LANGUAGES.get(detected_lang, detected_lang.upper())
+
+    # Fetch timedtext using multiple bypass techniques
+    raw_content = ""
+
+    # Technique 1: curl_cffi with Chrome browser impersonation (bypasses 429)
     try:
-        raw_bytes = ydl_instance.urlopen(cap_url).read()
-        raw_content = raw_bytes.decode('utf-8', errors='ignore')
-    except Exception as e:
+        from curl_cffi import requests as c_requests
+        c_resp = c_requests.get(cap_url, impersonate='chrome120', timeout=8)
+        if c_resp.status_code == 200 and len(c_resp.text) > 20:
+            raw_content = c_resp.text
+    except Exception:
+        pass
+
+    # Technique 2: Direct HTTP request with standard browser headers
+    if not raw_content:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
         try:
-            resp = requests.get(cap_url, headers=headers, timeout=10)
-            if resp.status_code == 200:
+            resp = requests.get(cap_url, headers=headers, timeout=8)
+            if resp.status_code == 200 and len(resp.text) > 20:
                 raw_content = resp.text
-            else:
-                raise ValueError(f"YouTube caption server responded with error code {resp.status_code}.")
         except Exception:
-            raise ValueError(f"Failed to download subtitles stream: {e}")
+            pass
+
+    # Technique 3: ydl_instance internal urlopen
+    if not raw_content:
+        try:
+            raw_bytes = ydl_instance.urlopen(cap_url).read()
+            text_cand = raw_bytes.decode('utf-8', errors='ignore')
+            if len(text_cand) > 20:
+                raw_content = text_cand
+        except Exception:
+            pass
+
+    # Technique 4: If server encounters 429, deliver signed cap_url for instant client-side browser fetch
+    if not raw_content:
+        return {
+            "success": True,
+            "need_client_fetch": True,
+            "video_title": video_title,
+            "video_id": video_id,
+            "caption_url": cap_url,
+            "detected_lang": detected_lang,
+            "original_lang_name": original_lang_name,
+            "current_lang": detected_lang,
+            "current_lang_name": f"{original_lang_name} (Original)",
+            "languages": LANGUAGES
+        }
 
     raw_text = ""
     if chosen_fmt.get('ext') == 'json3':
@@ -270,7 +269,6 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     if not original_paragraph:
         raise ValueError("Could not extract speech text from captions.")
 
-    original_lang_name = LANGUAGES.get(detected_lang, detected_lang.upper())
     current_paragraph = original_paragraph
     current_lang = detected_lang
     current_lang_name = f"{original_lang_name} (Original)"
