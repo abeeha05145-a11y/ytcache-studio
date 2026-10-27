@@ -107,56 +107,58 @@ async def serve_index():
 
 @app.get("/api/test-trans")
 def test_trans(url: str = "https://youtu.be/TpQLKdP5Nec"):
-    import traceback
     import yt_dlp
     import json
     from app.transcript import extract_youtube_id, get_cookie_opts
     vid = extract_youtube_id(url)
     cookie_opts = get_cookie_opts()
     
-    opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'format': 'all/none',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android'],
-                'player_skip': ['webpage']
+    attempts = [
+        {"name": "android_no_cookie", "client": ["android"], "skip": [], "use_cookie": False},
+        {"name": "android_cookie", "client": ["android"], "skip": [], "use_cookie": True},
+        {"name": "ios_no_cookie", "client": ["ios"], "skip": [], "use_cookie": False},
+        {"name": "tv_no_cookie", "client": ["tv"], "skip": [], "use_cookie": False},
+    ]
+    
+    results = {}
+    for att in attempts:
+        opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'format': 'all/none',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': att['client'],
+                }
             }
         }
-    }
-    if cookie_opts:
-        opts.update(cookie_opts)
-        
-    result = {"vid": vid, "cookie_opts": cookie_opts}
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
-            caps = info.get('automatic_captions') or {}
-            subs = info.get('subtitles') or {}
-            all_caps = subs if subs else caps
-            result["caps_count"] = len(all_caps)
-            result["caps_keys"] = list(all_caps.keys())
-            track = all_caps.get('en') or all_caps.get('en-orig') or list(all_caps.values())[0]
-            fmt = next((f for f in track if f.get('ext') == 'json3'), track[0])
-            raw = ydl.urlopen(fmt['url']).read()
-            data = json.loads(raw.decode('utf-8'))
-            words = []
-            for ev in data.get('events', []):
-                for s in ev.get('segs', []):
-                    if s.get('utf8'): words.append(s['utf8'])
-            text = ' '.join(words)
-            result["success"] = True
-            result["length"] = len(text)
-            result["sample"] = text[:150]
-    except Exception as e:
-        result["error"] = str(e)
-        result["trace"] = traceback.format_exc()
-        
-    return result
+        if att['skip']:
+            opts['extractor_args']['youtube']['player_skip'] = att['skip']
+        if att['use_cookie'] and cookie_opts:
+            opts.update(cookie_opts)
+            
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
+                caps = info.get('automatic_captions') or {}
+                subs = info.get('subtitles') or {}
+                all_caps = subs if subs else caps
+                track = all_caps.get('en') or all_caps.get('en-orig') or (list(all_caps.values())[0] if all_caps else None)
+                if track:
+                    fmt = next((f for f in track if f.get('ext') == 'json3'), track[0])
+                    raw = ydl.urlopen(fmt['url']).read()
+                    data = json.loads(raw.decode('utf-8'))
+                    words = [s['utf8'] for ev in data.get('events', []) for s in ev.get('segs', []) if s.get('utf8')]
+                    results[att['name']] = {"status": "SUCCESS", "caps_count": len(all_caps), "words_count": len(words), "sample": " ".join(words)[:80]}
+                else:
+                    results[att['name']] = {"status": "NO_TRACKS", "caps_count": len(all_caps)}
+        except Exception as e:
+            results[att['name']] = {"status": "ERROR", "err": str(e)[:120]}
+            
+    return results
 
 @app.get("/api/diag")
 def diag():
@@ -174,7 +176,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "3.6.0-skipweb",
+        "version": "3.7.0-matrix",
         "timestamp": time.time()
     }
 
