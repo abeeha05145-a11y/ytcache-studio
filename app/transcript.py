@@ -193,7 +193,17 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
 
         if fetched_obj:
             items = fetched_obj.fetch()
-            raw_text = " ".join(item.text for item in items if item.text)
+            words = []
+            for item in items:
+                if isinstance(item, dict):
+                    w = item.get('text', '')
+                elif hasattr(item, 'text'):
+                    w = item.text
+                else:
+                    w = str(item)
+                if w:
+                    words.append(w)
+            raw_text = " ".join(words)
     except Exception as e:
         last_err = e
 
