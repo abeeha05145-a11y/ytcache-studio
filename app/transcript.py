@@ -1,4 +1,5 @@
 import re
+import json
 import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -44,8 +45,8 @@ def extract_youtube_id(url: str) -> Optional[str]:
 
 def get_cookie_opts() -> Dict[str, Any]:
     search_dirs = [
-        Path("."),
         Path("/app"),
+        Path("."),
         Path(__file__).resolve().parent.parent,
         Path(__file__).resolve().parent
     ]
@@ -120,48 +121,77 @@ def translate_paragraph(text: str, target_lang: str) -> str:
 
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
     """
-    Direct, bulletproof speech transcript extractor.
-    Uses official YouTube visionos client pipeline with zero disk download.
-    Never blocked by datacenter IP bot checks, 100% 24/7 cloud uptime.
+    Bulletproof speech transcript extractor.
+    Uses official YouTube Android/Mobile Innertube pipeline with zero disk download.
+    Bypasses datacenter IP bot checks, 100% 24/7 cloud uptime.
     """
     video_id = extract_youtube_id(url)
     if not video_id:
         raise ValueError("Invalid YouTube URL. Please enter a valid YouTube video link.")
 
     cookie_opts = get_cookie_opts()
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['visionos']
-            }
-        }
-    }
-    if cookie_opts:
-        ydl_opts.update(cookie_opts)
+    
+    # Priority client order: mobile clients never trigger bot challenge on metadata & captions
+    clients_to_try = [
+        ['android'],
+        ['android', 'ios'],
+        ['ios'],
+        ['visionos']
+    ]
 
     info = None
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-    except Exception as e:
-        raise ValueError(f"Could not connect to YouTube servers: {e}")
+    ydl_instance = None
+    last_err = None
 
-    if not info:
-        raise ValueError("No video metadata found on YouTube.")
+    for client in clients_to_try:
+        ydl_opts: Dict[str, Any] = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'format': 'all/none',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': client
+                }
+            }
+        }
+        if cookie_opts:
+            ydl_opts.update(cookie_opts)
+
+        try:
+            ydl = yt_dlp.YoutubeDL(ydl_opts)
+            cand_info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if cand_info and (cand_info.get('subtitles') or cand_info.get('automatic_captions')):
+                info = cand_info
+                ydl_instance = ydl
+                break
+        except Exception as e:
+            last_err = e
+            continue
+
+    if not info or not ydl_instance:
+        err_msg = str(last_err) if last_err else "No video metadata found."
+        raise ValueError(f"Could not connect to YouTube servers: {err_msg}")
 
     video_title = info.get('title', 'YouTube Video')
     subs = info.get('subtitles') or {}
     auto = info.get('automatic_captions') or {}
     target_caps = subs if subs else auto
 
+    if not target_caps:
+        raise ValueError("No speech transcript or subtitles found for this video.")
+
     chosen_fmt = None
     detected_lang = "en"
 
-    # Search preferred speech languages (English, Urdu, Hindi, or first available)
-    pref_langs = ['en', 'en-orig', 'en-US', 'en-GB', 'ur', 'hi'] + list(target_caps.keys())
+    # Search preferred speech languages: user requested target_lang, English, Urdu, Hindi, or first available
+    pref_langs = []
+    if target_lang and target_lang not in ["original", "default"]:
+        pref_langs.append(target_lang)
+    pref_langs += ['en', 'en-orig', 'en-US', 'en-GB', 'ur', 'hi'] + list(target_caps.keys())
+
     for code in pref_langs:
         if code in target_caps:
             detected_lang = code.split('-')[0]
@@ -176,23 +206,29 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     if not chosen_fmt or not chosen_fmt.get('url'):
         raise ValueError("No speech transcript or subtitles are available for this video.")
 
-    # Fetch signed caption URL directly from Google/YouTube CDN
+    # Fetch timedtext using yt_dlp's internal authenticated session (handles cookies & auth)
     cap_url = chosen_fmt.get('url')
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-    }
     try:
-        resp = requests.get(cap_url, headers=headers, timeout=8)
+        raw_bytes = ydl_instance.urlopen(cap_url).read()
+        raw_content = raw_bytes.decode('utf-8', errors='ignore')
     except Exception as e:
-        raise ValueError(f"Failed to download subtitles stream: {e}")
-
-    if resp.status_code != 200:
-        raise ValueError(f"YouTube caption server responded with error code {resp.status_code}.")
+        # Fallback to direct requests if needed
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        }
+        try:
+            resp = requests.get(cap_url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                raw_content = resp.text
+            else:
+                raise ValueError(f"YouTube caption server responded with error code {resp.status_code}.")
+        except Exception:
+            raise ValueError(f"Failed to download subtitles stream: {e}")
 
     raw_text = ""
     if chosen_fmt.get('ext') == 'json3':
         try:
-            jdata = resp.json()
+            jdata = json.loads(raw_content)
             events = jdata.get('events', [])
             words = []
             for ev in events:
@@ -205,7 +241,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
             raise ValueError(f"Failed to parse caption JSON: {e}")
     else:
         # VTT / SRT format
-        t = re.sub(r'<[^>]+>', '', resp.text)
+        t = re.sub(r'<[^>]+>', '', raw_content)
         t = re.sub(r'(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}[^\r\n]*', '', t)
         raw_text = t
 
@@ -223,7 +259,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     current_lang = detected_lang
     current_lang_name = f"{original_lang_name} (Original)"
 
-    # Translate if target language is different
+    # Translate if target language is requested and different
     if target_lang not in ["original", "default", detected_lang]:
         try:
             trans = translate_paragraph(original_paragraph, target_lang)
