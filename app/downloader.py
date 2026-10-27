@@ -105,7 +105,7 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         ydl_opts.update(cookie_opts)
         ydl_opts['extractor_args'] = {
             'youtube': {
-                'player_client': ['web', 'android', 'ios'],
+                'player_client': ['android', 'ios'],
             }
         }
     else:
@@ -353,7 +353,7 @@ def start_download_task(
         ydl_opts.update(cookie_opts)
         ydl_opts['extractor_args'] = {
             'youtube': {
-                'player_client': ['web', 'android', 'ios'],
+                'player_client': ['android', 'ios'],
             }
         }
     else:
