@@ -29,7 +29,7 @@ import yt_dlp
 app = FastAPI(
     title="YTCache Unified - Video Downloader & Instant Speech Transcript",
     description="Unified platform for 4K video downloading and instant speech transcription.",
-    version="3.9.0"
+    version="4.0.0"
 )
 
 # CORS configuration
@@ -105,53 +105,12 @@ async def serve_index():
     }
     return HTMLResponse(content=content, headers=headers)
 
-@app.get("/api/test-direct-extract")
-def test_direct_extract(url: str = "https://www.youtube.com/watch?v=TpQLKdP5Nec"):
-    import yt_dlp
-    from app.downloader import get_cookie_opts
-    cookie_opts = get_cookie_opts()
-    
-    clients = [
-        ("web_with_cookie", ["web"], True),
-        ("mweb_with_cookie", ["mweb"], True),
-        ("tv_embedded", ["tv_embedded"], False),
-        ("android", ["android"], False),
-        ("ios", ["ios"], False),
-        ("web_no_cookie", ["web"], False),
-    ]
-    
-    results = {}
-    for name, cl, use_c in clients:
-        opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'extractor_args': {'youtube': {'player_client': cl}}
-        }
-        if use_c and cookie_opts:
-            opts.update(cookie_opts)
-            
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                fmts = info.get('formats', [])
-                results[name] = {
-                    "status": "SUCCESS",
-                    "title": info.get('title'),
-                    "format_count": len(fmts),
-                    "formats": [f.get('resolution') or f.get('format_id') for f in fmts[:5]]
-                }
-        except Exception as e:
-            results[name] = {"status": "ERROR", "err": str(e)[:120]}
-            
-    return results
-
 @app.get("/api/health")
 async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "3.9.0-dualfetch",
+        "version": "4.0.0-lightning",
         "timestamp": time.time()
     }
 
