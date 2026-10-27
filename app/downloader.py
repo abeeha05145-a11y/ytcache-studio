@@ -43,8 +43,8 @@ YOUTUBE_EXTRACTOR_ARGS = {
 }
 
 PROXIES_POOL = [
-    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
     "http://dxgwkmac:ul130busmnzq@64.137.10.153:5803",
+    "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
     "http://dxgwkmac:ul130busmnzq@38.154.185.97:6370",
     "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361",
     "http://dxgwkmac:ul130busmnzq@45.38.107.97:6014"
@@ -117,11 +117,6 @@ def extract_video_info(url: str) -> Dict[str, Any]:
     }
     if cookie_opts:
         ydl_opts.update(cookie_opts)
-        ydl_opts['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios'],
-            }
-        }
     else:
         ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
@@ -181,6 +176,13 @@ def extract_video_info(url: str) -> Dict[str, Any]:
         abr = best_audio.get('abr') or 128
         best_audio_size = (abr * 1024 * duration) / 8
 
+    def get_effective_height(fmt: dict) -> int:
+        w = fmt.get('width') or 0
+        h = fmt.get('height') or 0
+        if w and h:
+            return min(w, h)
+        return h or w or 0
+
     available_videos = []
     available_video_only = []
     seen_heights = set()
@@ -188,10 +190,10 @@ def extract_video_info(url: str) -> Dict[str, Any]:
     for res in standard_res:
         target_h = res["height"]
         
-        # Find candidate formats that match this height (or close to it)
+        # Find candidate formats matching this height (within +-25px for landscape & portrait)
         matching_formats = [
             f for f in formats 
-            if f.get('height') and f.get('vcodec') != 'none' and f.get('height') == target_h
+            if f.get('vcodec') != 'none' and abs(get_effective_height(f) - target_h) <= 25
         ]
 
         if not matching_formats:
@@ -254,8 +256,8 @@ def extract_video_info(url: str) -> Dict[str, Any]:
     if not available_videos:
         for f in formats:
             if f.get('vcodec') != 'none':
-                h = f.get('height') or f.get('width') or 360
-                display_res = f"{min(f.get('height', h), f.get('width', h))}p" if (f.get('height') and f.get('width')) else f"{h}p"
+                h = get_effective_height(f) or 360
+                display_res = f"{h}p"
                 needs_merge = f.get('acodec') == 'none'
                 v_size = f.get('filesize') or f.get('filesize_approx')
                 tot_size = (v_size + best_audio_size) if (needs_merge and v_size and best_audio_size) else v_size
@@ -374,11 +376,6 @@ def start_download_task(
     }
     if cookie_opts:
         ydl_opts.update(cookie_opts)
-        ydl_opts['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios'],
-            }
-        }
     else:
         ydl_opts['extractor_args'] = YOUTUBE_EXTRACTOR_ARGS
 
@@ -404,8 +401,10 @@ def start_download_task(
             if height:
                 ydl_opts['format'] = (
                     f"bestvideo[height<={height}][vcodec^=avc]/"
+                    f"bestvideo[width<={height}][vcodec^=avc]/"
                     f"bestvideo[height<={height}][ext=mp4]/"
-                    f"bestvideo[height<={height}]/bestvideo"
+                    f"bestvideo[width<={height}][ext=mp4]/"
+                    f"bestvideo[height<={height}]/bestvideo[width<={height}]/bestvideo"
                 )
             else:
                 ydl_opts['format'] = "bestvideo[vcodec^=avc]/bestvideo[ext=mp4]/bestvideo"
@@ -417,13 +416,16 @@ def start_download_task(
             }]
         else:
             # Full Video WITH Sound (Default)
-            # Prefer universally compatible H.264 (avc1) + AAC (mp4a) so files play on any Windows/Mac/Mobile player
-            # Seamless fallback to VP9/AV1 for 2K/4K streams
+            # Prefer universally compatible H.264 (avc1) + AAC (mp4a)
             if height:
                 ydl_opts['format'] = (
                     f"bestvideo[height<={height}][vcodec^=avc]+bestaudio[acodec^=mp4a]/"
+                    f"bestvideo[width<={height}][vcodec^=avc]+bestaudio[acodec^=mp4a]/"
                     f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
-                    f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+                    f"bestvideo[width<={height}][ext=mp4]+bestaudio[ext=m4a]/"
+                    f"bestvideo[height<={height}]+bestaudio/"
+                    f"bestvideo[width<={height}]+bestaudio/"
+                    f"best[height<={height}]/best[width<={height}]/best"
                 )
             else:
                 ydl_opts['format'] = (
