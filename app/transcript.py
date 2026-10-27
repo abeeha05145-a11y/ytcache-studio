@@ -188,7 +188,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
             ydl_opts.update(cookie_opts)
             ydl_opts['extractor_args'] = {
                 'youtube': {
-                    'player_client': ['web', 'android', 'ios'],
+                    'player_client': ['android', 'ios'],
                 }
             }
         else:
