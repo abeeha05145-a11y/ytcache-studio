@@ -105,78 +105,12 @@ async def serve_index():
     }
     return HTMLResponse(content=content, headers=headers)
 
-@app.get("/api/test-trans")
-def test_trans(url: str = "https://youtu.be/TpQLKdP5Nec"):
-    import yt_dlp
-    import json
-    from app.transcript import extract_youtube_id, get_cookie_opts
-    vid = extract_youtube_id(url)
-    cookie_opts = get_cookie_opts()
-    
-    attempts = [
-        {"name": "android_no_cookie", "client": ["android"], "skip": [], "use_cookie": False},
-        {"name": "android_cookie", "client": ["android"], "skip": [], "use_cookie": True},
-        {"name": "ios_no_cookie", "client": ["ios"], "skip": [], "use_cookie": False},
-        {"name": "tv_no_cookie", "client": ["tv"], "skip": [], "use_cookie": False},
-    ]
-    
-    results = {}
-    for att in attempts:
-        opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'format': 'all/none',
-            'extractor_args': {
-                'youtube': {
-                    'player_client': att['client'],
-                }
-            }
-        }
-        if att['skip']:
-            opts['extractor_args']['youtube']['player_skip'] = att['skip']
-        if att['use_cookie'] and cookie_opts:
-            opts.update(cookie_opts)
-            
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
-                caps = info.get('automatic_captions') or {}
-                subs = info.get('subtitles') or {}
-                all_caps = subs if subs else caps
-                track = all_caps.get('en') or all_caps.get('en-orig') or (list(all_caps.values())[0] if all_caps else None)
-                if track:
-                    fmt = next((f for f in track if f.get('ext') == 'json3'), track[0])
-                    raw = ydl.urlopen(fmt['url']).read()
-                    data = json.loads(raw.decode('utf-8'))
-                    words = [s['utf8'] for ev in data.get('events', []) for s in ev.get('segs', []) if s.get('utf8')]
-                    results[att['name']] = {"status": "SUCCESS", "caps_count": len(all_caps), "words_count": len(words), "sample": " ".join(words)[:80]}
-                else:
-                    results[att['name']] = {"status": "NO_TRACKS", "caps_count": len(all_caps)}
-        except Exception as e:
-            results[att['name']] = {"status": "ERROR", "err": str(e)[:120]}
-            
-    return results
-
-@app.get("/api/diag")
-def diag():
-    from app.downloader import get_cookie_opts
-    opts = get_cookie_opts()
-    app_files = [f.name for f in Path("/app").iterdir()] if Path("/app").exists() else []
-    return {
-        "cookie_opts": opts,
-        "app_files": app_files,
-        "env_cookie_len": len(os.getenv("YOUTUBE_COOKIES", ""))
-    }
-
 @app.get("/api/health")
 async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "3.7.0-matrix",
+        "version": "3.0.0",
         "timestamp": time.time()
     }
 
