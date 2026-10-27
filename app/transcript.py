@@ -3,17 +3,24 @@ import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from http.cookiejar import MozillaCookieJar
 import requests
 import yt_dlp
 import os
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled, VideoUnavailable
 from app.config import DOWNLOAD_DIR
 
 CHROME_TARGET = None
 
-def get_cookie_opts() -> Dict[str, Any]:
-    """Detect cookies.txt / www.youtube.com_cookies.txt or YOUTUBE_COOKIES env var."""
-    search_dirs = [Path("."), Path("/app"), Path(__file__).resolve().parent.parent, Path(__file__).resolve().parent]
+def get_cookie_file() -> Optional[str]:
+    """Detect path to cookies.txt or create from YOUTUBE_COOKIES environment variable."""
+    search_dirs = [
+        Path("."),
+        Path("/app"),
+        Path(__file__).resolve().parent.parent,
+        Path(__file__).resolve().parent
+    ]
     cookie_names = [
         "www.youtube.com_cookies.txt",
         "cookies.txt",
@@ -24,11 +31,11 @@ def get_cookie_opts() -> Dict[str, Any]:
         for name in cookie_names:
             p = d / name
             if p.exists() and p.stat().st_size > 0:
-                return {'cookiefile': str(p.resolve())}
+                return str(p.resolve())
         try:
             for p in d.glob("*cookie*.txt"):
                 if p.exists() and p.stat().st_size > 0:
-                    return {'cookiefile': str(p.resolve())}
+                    return str(p.resolve())
         except Exception:
             pass
     
@@ -38,24 +45,28 @@ def get_cookie_opts() -> Dict[str, Any]:
         try:
             content = env_cookies.strip().replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\t', '\t')
             tmp_path.write_text(content, encoding="utf-8")
-            return {'cookiefile': str(tmp_path.resolve())}
+            return str(tmp_path.resolve())
         except Exception:
             pass
+    return None
+
+def get_cookie_opts() -> Dict[str, Any]:
+    c_file = get_cookie_file()
+    if c_file:
+        return {'cookiefile': c_file}
     return {}
 
 PROXIES_POOL = [
-    "http://dxgwkmac:ul130busmnzq@64.137.10.153:5803",
     "http://dxgwkmac:ul130busmnzq@191.96.254.138:6185",
     "http://dxgwkmac:ul130busmnzq@38.154.185.97:6370",
-    "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361",
-    "http://dxgwkmac:ul130busmnzq@45.38.107.97:6014"
+    "http://dxgwkmac:ul130busmnzq@198.23.243.226:6361"
 ]
 
 def get_proxy_list() -> List[Optional[str]]:
     env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
     if env_p and len(env_p.strip()) > 5:
-        return [env_p.strip()] + PROXIES_POOL
-    return list(PROXIES_POOL)
+        return [None, env_p.strip()] + PROXIES_POOL
+    return [None] + list(PROXIES_POOL)
 
 LANGUAGES = {
     "original": "Original Spoken Audio",
@@ -79,9 +90,6 @@ LANGUAGES = {
 }
 
 def extract_youtube_id(url: str) -> Optional[str]:
-    """
-    Extracts 11-character YouTube video ID from various URL formats.
-    """
     clean_url = url.strip()
     patterns = [
         r'(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/|\/watch\?v=|\&v=)([a-zA-Z0-9_-]{11})',
@@ -97,18 +105,33 @@ def fetch_video_title(video_id: str) -> str:
     """Fetch video title using lightning-fast YouTube oEmbed (no auth / no rate limits)."""
     try:
         url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-        r = requests.get(url, timeout=5)
+        r = requests.get(url, timeout=4)
         if r.status_code == 200:
             return r.json().get('title', 'YouTube Video')
     except Exception:
         pass
     return "YouTube Video"
 
+def create_authenticated_session(proxy: Optional[str] = None) -> requests.Session:
+    """Create requests session loaded with YouTube authentication cookies & headers."""
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+    })
+    c_file = get_cookie_file()
+    if c_file:
+        try:
+            cj = MozillaCookieJar(c_file)
+            cj.load(ignore_discard=True, ignore_expires=True)
+            session.cookies = cj
+        except Exception:
+            pass
+    if proxy:
+        session.proxies = {'http': proxy, 'https': proxy}
+    return session
+
 def translate_paragraph(text: str, target_lang: str) -> str:
-    """
-    Translates paragraph text into target language using Google Translate API.
-    Splits into safe chunks to avoid URL length restrictions.
-    """
     if not text.strip() or target_lang in ["original", "default"]:
         return text
 
@@ -136,23 +159,22 @@ def translate_paragraph(text: str, target_lang: str) -> str:
     for chunk in chunks:
         try:
             url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={target_lang}&dt=t&q={urllib.parse.quote(chunk)}"
-            resp = requests.get(url, headers=headers, timeout=8)
+            resp = requests.get(url, headers=headers, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 translated_pieces = [p[0] for p in data[0] if p and p[0]]
                 translated_chunks.append("".join(translated_pieces))
             else:
                 translated_chunks.append(chunk)
-        except Exception as e:
+        except Exception:
             translated_chunks.append(chunk)
 
     return " ".join(translated_chunks)
 
 def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, Any]:
     """
-    High-speed, robust speech transcript extractor.
-    Uses official YouTube transcript streams (direct + proxy pool).
-    Takes < 1 second, zero disk downloads.
+    High-speed, authentic speech transcript extractor.
+    Extracts purely speech text within 1-2 seconds with zero disk downloads.
     """
     video_id = extract_youtube_id(url)
     if not video_id:
@@ -163,21 +185,15 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     detected_lang = "en"
     detected_transcript_obj = None
 
-    # First try direct connection, then working proxies
-    sessions_to_try = [None] + get_proxy_list()
+    candidates = [None] + PROXIES_POOL
 
-    for proxy in sessions_to_try:
+    for proxy in candidates:
         try:
-            http_client = None
-            if proxy:
-                http_client = requests.Session()
-                http_client.proxies = {'http': proxy, 'https': proxy}
-
-            api = YouTubeTranscriptApi(http_client=http_client)
+            session = create_authenticated_session(proxy=proxy)
+            api = YouTubeTranscriptApi(http_client=session)
             transcript_list = api.list(video_id)
 
             chosen_t = None
-            # Check for preferred language matches
             pref_codes = [target_lang, 'en', 'ur', 'hi'] if target_lang not in ["original", "default"] else ['en', 'ur', 'hi']
             for code in pref_codes:
                 try:
@@ -187,7 +203,6 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                 except Exception:
                     pass
 
-            # Fallback to any transcript available
             if not chosen_t:
                 for t in transcript_list:
                     chosen_t = t
@@ -211,72 +226,10 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                 original_paragraph = text.strip()
                 if original_paragraph:
                     break
-        except Exception as e:
-            continue
-
-    # Fallback to yt-dlp metadata caption extractor if API was blocked
-    if not original_paragraph:
-        try:
-            cookie_opts = get_cookie_opts()
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'skip_download': True,
-            }
-            if cookie_opts:
-                ydl_opts.update(cookie_opts)
-
-            proxies_to_try = [None] + get_proxy_list()
-            for p in proxies_to_try:
-                run_opts = dict(ydl_opts)
-                if p:
-                    run_opts['proxy'] = p
-                try:
-                    with yt_dlp.YoutubeDL(run_opts) as ydl:
-                        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                        if info:
-                            if not video_title or video_title == "YouTube Video":
-                                video_title = info.get('title', 'YouTube Video')
-                            subs = info.get('subtitles') or info.get('automatic_captions') or {}
-                            target_caps = None
-                            for code in ['en', 'ur', 'hi']:
-                                if code in subs:
-                                    target_caps = subs[code]
-                                    detected_lang = code
-                                    break
-                            if not target_caps and subs:
-                                first_k = list(subs.keys())[0]
-                                target_caps = subs[first_k]
-                                detected_lang = first_k
-
-                            if target_caps:
-                                chosen_fmt = next((f for f in target_caps if f.get('ext') == 'json3'), None) or target_caps[0]
-                                cap_url = chosen_fmt.get('url')
-                                if cap_url:
-                                    cap_resp = requests.get(cap_url, timeout=6)
-                                    if cap_resp.status_code == 200:
-                                        if chosen_fmt.get('ext') == 'json3':
-                                            jdata = cap_resp.json()
-                                            events = jdata.get('events', [])
-                                            lines = []
-                                            for ev in events:
-                                                for seg in ev.get('segs', []):
-                                                    st = seg.get('utf8', '').strip()
-                                                    if st and st != '\n':
-                                                        lines.append(st)
-                                            original_paragraph = " ".join(lines)
-                                        else:
-                                            # Clean VTT
-                                            t = re.sub(r'<[^>]+>', '', cap_resp.text)
-                                            t = re.sub(r'(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}[^\r\n]*', '', t)
-                                            t = re.sub(r'\[.*?\]', '', t)
-                                            original_paragraph = re.sub(r'\s+', ' ', t).strip()
-                                        if original_paragraph:
-                                            break
-                except Exception:
-                    continue
+        except (NoTranscriptFound, TranscriptsDisabled, VideoUnavailable):
+            break
         except Exception:
-            pass
+            continue
 
     if not original_paragraph:
         raise ValueError("No speech transcript or subtitles are available for this video.")
@@ -286,10 +239,9 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
     current_lang = detected_lang
     current_lang_name = f"{original_lang_name} (Original)"
 
-    # Handle Translation
+    # Handle Translation if requested
     if target_lang not in ["original", "default", detected_lang]:
         translated = False
-        # 1. Try YouTube official translation track
         if detected_transcript_obj and getattr(detected_transcript_obj, 'is_translatable', False):
             try:
                 trans_obj = detected_transcript_obj.translate(target_lang)
@@ -310,7 +262,6 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
             except Exception:
                 pass
 
-        # 2. Try Google Translate fallback
         if not translated:
             try:
                 translated_text = translate_paragraph(original_paragraph, target_lang)
