@@ -110,7 +110,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "4.0.0-lightning",
+        "version": "4.1.0-complete-notify",
         "timestamp": time.time()
     }
 
