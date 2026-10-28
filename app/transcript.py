@@ -217,7 +217,7 @@ def get_video_transcript(url: str, target_lang: str = "original") -> Dict[str, A
                 base_ydl_opts.update(cookie_opts)
 
             proxy_attempts = get_proxy_attempts()
-            client_attempts = ['visionos', 'android', 'ios', 'web']
+            client_attempts = ['android', 'ios', 'tv_embedded', 'visionos', 'web']
 
             for p in proxy_attempts:
                 for client in client_attempts:
