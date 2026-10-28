@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 
 import aiofiles
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -48,6 +48,24 @@ download_jobs: Dict[str, Dict[str, Any]] = {}
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    content = "User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://ytcache-studio.onrender.com/sitemap.xml\n"
+    return PlainTextResponse(content=content, media_type="text/plain")
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://ytcache-studio.onrender.com/</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>"""
+    return Response(content=content, media_type="application/xml")
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
@@ -110,7 +128,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "4.1.0-complete-notify",
+        "version": "4.2.0-seo-ready",
         "timestamp": time.time()
     }
 
