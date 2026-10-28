@@ -49,6 +49,10 @@ STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+@app.get("/google5261ceb90033fda9.html", include_in_schema=False)
+async def google_verification():
+    return PlainTextResponse("google-site-verification: google5261ceb90033fda9.html", media_type="text/html")
+
 @app.get("/robots.txt", include_in_schema=False)
 async def robots_txt():
     content = "User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://ytcache.xyz/sitemap.xml\n"
