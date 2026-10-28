@@ -51,7 +51,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/robots.txt", include_in_schema=False)
 async def robots_txt():
-    content = "User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://ytcache-studio.onrender.com/sitemap.xml\n"
+    content = "User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://ytcache.xyz/sitemap.xml\n"
     return PlainTextResponse(content=content, media_type="text/plain")
 
 @app.get("/sitemap.xml", include_in_schema=False)
@@ -59,7 +59,7 @@ async def sitemap_xml():
     content = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://ytcache-studio.onrender.com/</loc>
+    <loc>https://ytcache.xyz/</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
