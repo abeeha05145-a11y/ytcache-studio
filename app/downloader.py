@@ -34,19 +34,25 @@ def format_duration(seconds: Optional[int]) -> str:
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
+PROXIES_POOL = [
+    "http://bycarzyr:hktbtwddiin7@84.247.60.125:6095",
+    "http://bycarzyr:hktbtwddiin7@38.154.185.97:6370",
+    "http://bycarzyr:hktbtwddiin7@64.137.96.74:6641",
+    "http://bycarzyr:hktbtwddiin7@45.38.107.97:6014"
+]
+PRIMARY_PROXY = PROXIES_POOL[0]
+
 def get_configured_proxy() -> Optional[str]:
-    """Detect custom PROXY_URL from environment variable if provided."""
     env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
     if env_p and len(env_p.strip()) > 5:
         return env_p.strip()
     return None
 
 def get_proxy_attempts() -> List[Optional[str]]:
-    """Prioritize user environment proxy if specified, followed by direct connection (None)."""
     p = get_configured_proxy()
     if p:
-        return [p, None]
-    return [None]
+        return [p] + PROXIES_POOL + [None]
+    return PROXIES_POOL + [None]
 
 # Global high-speed in-memory metadata cache (15 min TTL)
 _METADATA_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -139,7 +145,7 @@ def extract_video_info(url: str, force_refresh: bool = False) -> Dict[str, Any]:
 
     # Ultra-fast pipeline: direct connection first with visionos client, fallback to android, then env proxy if set
     proxy_attempts = get_proxy_attempts()
-    client_attempts = ['visionos', 'android', 'ios', 'web']
+    client_attempts = ['android', 'ios', 'tv_embedded', 'visionos', 'web']
 
     for p in proxy_attempts:
         for client in client_attempts:
@@ -454,7 +460,8 @@ def start_download_task(
                 )
             ydl_opts['merge_output_format'] = 'mp4'
 
-        proxies_to_attempt = get_proxy_attempts()
+        # 0 MB Proxy burn: download large media chunks directly from CDN without consuming proxy quota!
+        proxies_to_attempt = [None, PRIMARY_PROXY]
         last_dl_err = None
         download_success = False
 
