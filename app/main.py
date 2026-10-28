@@ -315,38 +315,3 @@ async def fetch_transcript_endpoint(req: TranscriptRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcript error: {str(e)}")
-
-
-@app.get("/api/test-clients")
-async def test_clients_endpoint(url: str = "https://www.youtube.com/watch?v=TpQLKdP5Nec"):
-    import yt_dlp
-    from app.downloader import get_cookie_opts
-    cookie_opts = get_cookie_opts()
-    results = {}
-    clients = ["tv_embedded", "android", "ios", "visionos", "web_embedded", "mweb", "android_vr"]
-    
-    for use_cookies in [False, True]:
-        key_prefix = "with_cookies" if use_cookies else "no_cookies"
-        for cl in clients:
-            test_key = f"{key_prefix}_{cl}"
-            opts = {
-                "quiet": True,
-                "no_warnings": True,
-                "skip_download": True,
-                "socket_timeout": 6,
-                "extractor_args": {"youtube": {"player_client": [cl]}}
-            }
-            if use_cookies and cookie_opts:
-                opts.update(cookie_opts)
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    title = info.get("title")
-                    fmts = len(info.get("formats", []))
-                    auto = len(info.get("automatic_captions", {}))
-                    results[test_key] = f"SUCCESS: {title[:30]} ({fmts} fmts, {auto} captions)"
-                    return {"working_client": cl, "use_cookies": use_cookies, "details": results}
-            except Exception as e:
-                results[test_key] = f"FAIL: {str(e)[:100]}"
-                
-    return {"status": "none_worked", "details": results}
