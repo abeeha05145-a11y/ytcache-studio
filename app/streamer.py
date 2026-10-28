@@ -5,7 +5,13 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, Optional
 import yt_dlp
 import asyncio
-from app.downloader import get_cookie_opts, normalize_youtube_url, clean_filename, get_cached_metadata, PRIMARY_PROXY, PROXIES_POOL
+from app.downloader import (
+    get_cookie_opts, 
+    normalize_youtube_url, 
+    clean_filename, 
+    get_cached_metadata, 
+    get_proxy_attempts
+)
 
 async def create_media_stream(
     url: str,
@@ -26,12 +32,11 @@ async def create_media_stream(
 
     if not info:
         cookie_opts = get_cookie_opts()
-        ydl_opts = {
+        base_ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
             'socket_timeout': 6,
-            'proxy': PRIMARY_PROXY,
             'extractor_args': {
                 'youtube': {
                     'player_client': ['visionos']
@@ -39,17 +44,22 @@ async def create_media_stream(
             }
         }
         if cookie_opts:
-            ydl_opts.update(cookie_opts)
+            base_ydl_opts.update(cookie_opts)
 
-        def _extract():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(clean_url, download=False)
-
-        try:
-            info = await asyncio.to_thread(_extract)
-        except Exception:
-            ydl_opts['proxy'] = PROXIES_POOL[1]
-            info = await asyncio.to_thread(_extract)
+        proxy_attempts = get_proxy_attempts()
+        for p in proxy_attempts:
+            run_opts = dict(base_ydl_opts)
+            if p:
+                run_opts['proxy'] = p
+            try:
+                def _extract():
+                    with yt_dlp.YoutubeDL(run_opts) as ydl:
+                        return ydl.extract_info(clean_url, download=False)
+                info = await asyncio.to_thread(_extract)
+                if info and info.get('formats'):
+                    break
+            except Exception:
+                continue
 
     if not info:
         raise ValueError("Could not extract media streams from YouTube.")
@@ -152,20 +162,29 @@ async def create_media_stream(
                 'pipe:1'
             ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=128 * 1024)
+    # Start asynchronous subprocess pipeline
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL
+    )
 
-    async def stream_generator():
+    async def stream_generator() -> AsyncGenerator[bytes, None]:
+        chunk_size = 1024 * 512  # 512 KB chunks for smooth responsive playback
         try:
-            loop = asyncio.get_event_loop()
             while True:
-                chunk = await loop.run_in_executor(None, proc.stdout.read, 128 * 1024)
-                if not chunk:
+                data = await proc.stdout.read(chunk_size)
+                if not data:
                     break
-                yield chunk
+                yield data
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
         finally:
-            try:
-                proc.terminate()
-            except Exception:
-                pass
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
 
     return stream_generator(), filename, media_type
