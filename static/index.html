@@ -453,6 +453,33 @@
         </div>
       </div>
 
+      <!-- Download Success Completion Banner -->
+      <div id="download-success-card" class="glass-panel rounded-3xl p-5 sm:p-6 mb-6 hidden border border-emerald-500/35 bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-indigo-500/10 backdrop-blur-xl shadow-lg shadow-emerald-500/10 transition-all duration-300">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3.5 min-w-0">
+            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center flex-shrink-0 shadow-md shadow-emerald-600/30">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white leading-tight flex items-center gap-2">
+                <span>Video Download Complete!</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">Success</span>
+              </div>
+              <p id="success-card-desc" class="text-xs text-slate-600 dark:text-slate-300 mt-1 font-semibold truncate">File has been saved to your browser downloads folder.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <a id="success-redownload-btn" href="#" class="btn-ripple px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 bg-white/70 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700 transition shadow-sm border border-slate-200/50 dark:border-slate-700/50 flex items-center gap-1.5 cursor-pointer">
+              <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              <span class="hidden sm:inline">Save Again</span>
+            </a>
+            <button id="success-card-close-btn" class="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition cursor-pointer" title="Dismiss">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Format Grids -->
       <!-- 1. Video with Sound -->
       <div id="video-formats-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
