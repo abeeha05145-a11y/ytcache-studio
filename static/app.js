@@ -839,8 +839,56 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // 8. Feature 1: Video Downloader Engine
+  // 8. Feature 1: Video Downloader Engine (Pre-fetch & Instant Formats)
   // -------------------------------------------------------------
+
+  let prefetchPromise = null;
+  let prefetchedUrl = '';
+
+  function isLikelyYouTubeUrl(val) {
+    if (!val || typeof val !== 'string') return false;
+    const clean = val.trim();
+    return /(?:v=|\/shorts\/|\/v\/|youtu\.be\/|^)([a-zA-Z0-9_-]{11})(?:[&?]|$)/.test(clean);
+  }
+
+  function prefetchVideoMetadata(url) {
+    const clean = url.trim();
+    if (!isLikelyYouTubeUrl(clean) || clean === prefetchedUrl) return;
+    prefetchedUrl = clean;
+
+    prefetchPromise = fetch('/api/fetch-info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: clean })
+    })
+    .then(async resp => {
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.video_formats) {
+          currentVideoData = data;
+          currentVideoUrl = clean;
+          return data;
+        }
+      }
+      return null;
+    })
+    .catch(() => null);
+  }
+
+  if (videoUrlInput) {
+    videoUrlInput.addEventListener('input', () => {
+      const val = videoUrlInput.value.trim();
+      if (isLikelyYouTubeUrl(val)) {
+        prefetchVideoMetadata(val);
+      }
+    });
+    videoUrlInput.addEventListener('change', () => {
+      const val = videoUrlInput.value.trim();
+      if (isLikelyYouTubeUrl(val)) {
+        prefetchVideoMetadata(val);
+      }
+    });
+  }
 
   async function handleDownloadVideoClick() {
     hideError();
@@ -850,22 +898,38 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Instant zero-lag cache open if already prefetched!
+    if (currentVideoData && currentVideoUrl === url) {
+      renderDownloaderSection(currentVideoData);
+      openDownloaderSection();
+      return;
+    }
+
     currentVideoUrl = url;
 
     if (btnDownloadVideo) btnDownloadVideo.disabled = true;
     if (downloadBtnSpinner) downloadBtnSpinner.classList.remove('hidden');
 
     try {
-      const resp = await fetch('/api/fetch-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url })
-      });
-
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.detail || data.error || "Unable to retrieve video information.");
+      let data = null;
+      // If a background prefetch is already in-flight for this exact URL, await it!
+      if (prefetchPromise && prefetchedUrl === url) {
+        data = await prefetchPromise;
       }
+
+      if (!data) {
+        const resp = await fetch('/api/fetch-info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+
+        data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.detail || data.error || "Unable to retrieve video information.");
+        }
+      }
+
       if (!data || typeof data !== 'object') {
         throw new Error("Unable to parse video details from YouTube. Please try another video.");
       }
@@ -1200,7 +1264,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.error("Progress Poll Error:", err);
       }
-    }, 800);
+    }, 350);
   }
 
   // -------------------------------------------------------------
@@ -1310,18 +1374,33 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.need_client_fetch && data.caption_url) {
         try {
           const capResp = await fetch(data.caption_url);
-          const jdata = await capResp.json();
-          const words = [];
-          if (jdata.events) {
-            for (const ev of jdata.events) {
-              if (ev.segs) {
-                for (const seg of ev.segs) {
-                  if (seg.utf8) words.push(seg.utf8.trim());
+          const rawText = await capResp.text();
+          let words = [];
+          const trimmed = rawText.trim();
+          if (trimmed.startsWith('{')) {
+            const jdata = JSON.parse(trimmed);
+            if (jdata.events) {
+              for (const ev of jdata.events) {
+                if (ev.segs) {
+                  for (const seg of ev.segs) {
+                    if (seg.utf8) words.push(seg.utf8.trim());
+                  }
                 }
               }
             }
+          } else if (trimmed.includes('<text') || trimmed.includes('<p')) {
+            const matches = trimmed.match(/<(?:text|p)[^>]*>(.*?)<\/(?:text|p)>/gi);
+            if (matches) {
+              words = matches.map(m => m.replace(/<[^>]+>/g, '').trim());
+            }
+          } else {
+            const cleaned = trimmed
+              .replace(/WEBVTT[^\r\n]*/gi, '')
+              .replace(/(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}[^\r\n]*/g, '')
+              .replace(/<[^>]+>/g, '');
+            words = [cleaned];
           }
-          let cleanText = words.join(' ').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').replace(/[♪♫#]+/g, '').replace(/\s+/g, ' ').trim();
+          let cleanText = words.join(' ').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').replace(/[♪♫#♬]+/g, '').replace(/\s+/g, ' ').trim();
           if (cleanText) {
             data.paragraph = cleanText;
             currentTranscriptData = data;
