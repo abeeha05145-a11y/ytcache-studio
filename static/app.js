@@ -715,6 +715,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressEta = document.getElementById('progress-eta');
   const downloadReadyBox = document.getElementById('download-ready-box');
   const downloadDirectLink = document.getElementById('download-direct-link');
+  const downloadSuccessCard = document.getElementById('download-success-card');
+  const successCardDesc = document.getElementById('success-card-desc');
+  const successRedownloadBtn = document.getElementById('success-redownload-btn');
+  const successCardCloseBtn = document.getElementById('success-card-close-btn');
+
+  if (successCardCloseBtn && downloadSuccessCard) {
+    successCardCloseBtn.addEventListener('click', () => {
+      downloadSuccessCard.classList.add('hidden');
+    });
+  }
 
   // Modal Elements (Transcript)
   const transcriptModal = document.getElementById('transcript-modal');
@@ -890,6 +900,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function closeDownloaderSection() {
     if (!downloaderSection || downloaderSection.classList.contains('hidden')) return;
+    if (downloadSuccessCard) downloadSuccessCard.classList.add('hidden');
+    if (progressCard) progressCard.classList.add('hidden');
 
     downloaderSection.classList.add('opacity-0', '-translate-y-3');
     downloaderSection.classList.remove('opacity-100', 'translate-y-0');
@@ -1062,6 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
       progressCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
     if (downloadReadyBox) downloadReadyBox.classList.add('hidden');
+    if (downloadSuccessCard) downloadSuccessCard.classList.add('hidden');
 
     if (progressStatusText) progressStatusText.textContent = "Connecting to YouTube servers...";
     if (progressPercent) progressPercent.textContent = "0%";
@@ -1134,18 +1147,50 @@ document.addEventListener('DOMContentLoaded', () => {
           if (progressStatusText) progressStatusText.textContent = "Download Complete!";
 
           const streamUrl = data.download_url || `/api/stream/${jobId}`;
+          const fileName = data.file_name || 'YouTube_Video.mp4';
+
           if (downloadDirectLink) {
             downloadDirectLink.href = streamUrl;
-            downloadDirectLink.setAttribute('download', data.file_name || 'download');
+            downloadDirectLink.setAttribute('download', fileName);
           }
           if (downloadReadyBox) downloadReadyBox.classList.remove('hidden');
 
+          // Trigger native browser download directly
           const tempAnchor = document.createElement('a');
           tempAnchor.href = streamUrl;
-          tempAnchor.setAttribute('download', data.file_name || 'download');
+          tempAnchor.setAttribute('download', fileName);
           document.body.appendChild(tempAnchor);
           tempAnchor.click();
           document.body.removeChild(tempAnchor);
+
+          // Configure success card details and save-again button
+          if (successRedownloadBtn) {
+            successRedownloadBtn.href = streamUrl;
+            successRedownloadBtn.setAttribute('download', fileName);
+          }
+          if (successCardDesc) {
+            successCardDesc.textContent = `"${fileName}" has been saved to your downloads.`;
+          }
+
+          // Smoothly close the progress processing area and show completion banner
+          setTimeout(() => {
+            if (progressCard) {
+              progressCard.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+              setTimeout(() => {
+                progressCard.classList.add('hidden');
+                progressCard.classList.remove('opacity-0', 'transition-opacity', 'duration-300');
+              }, 300);
+            }
+
+            if (downloadSuccessCard) {
+              downloadSuccessCard.classList.remove('hidden');
+              downloadSuccessCard.classList.add('opacity-0', 'scale-95');
+              requestAnimationFrame(() => {
+                downloadSuccessCard.classList.remove('opacity-0', 'scale-95');
+                downloadSuccessCard.classList.add('opacity-100', 'scale-100', 'transition-all', 'duration-300');
+              });
+            }
+          }, 800);
 
         } else if (data.status === 'error') {
           clearInterval(activePollInterval);
