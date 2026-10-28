@@ -34,25 +34,19 @@ def format_duration(seconds: Optional[int]) -> str:
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
-# Verified active Webshare proxies pool
-PROXIES_POOL = [
-    "http://jwdqftrd:qcqth1klolmb@45.38.107.97:6014",
-    "http://jwdqftrd:qcqth1klolmb@64.137.96.74:6641",
-    "http://jwdqftrd:qcqth1klolmb@198.23.243.226:6361",
-    "http://jwdqftrd:qcqth1klolmb@38.154.185.97:6370",
-    "http://jwdqftrd:qcqth1klolmb@84.247.60.125:6095",
-    "http://jwdqftrd:qcqth1klolmb@191.96.254.138:6185",
-    "http://jwdqftrd:qcqth1klolmb@198.46.161.42:5092",
-    "http://jwdqftrd:qcqth1klolmb@64.137.10.153:5803"
-]
-
-PRIMARY_PROXY = PROXIES_POOL[0]
-
-def get_proxy_list() -> List[Optional[str]]:
+def get_configured_proxy() -> Optional[str]:
+    """Detect custom PROXY_URL from environment variable if provided."""
     env_p = os.getenv("PROXY_URL") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
     if env_p and len(env_p.strip()) > 5:
-        return [env_p.strip()] + PROXIES_POOL + [None]
-    return PROXIES_POOL + [None]
+        return env_p.strip()
+    return None
+
+def get_proxy_attempts() -> List[Optional[str]]:
+    """Prioritize user environment proxy if specified, followed by direct connection (None)."""
+    p = get_configured_proxy()
+    if p:
+        return [p, None]
+    return [None]
 
 # Global high-speed in-memory metadata cache (15 min TTL)
 _METADATA_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -69,7 +63,7 @@ def set_cached_metadata(clean_url: str, raw_info: Dict[str, Any], extracted_data
         'timestamp': time.time(),
         'raw_info': raw_info,
         'extracted_data': extracted_data,
-        'working_proxy': working_proxy or PRIMARY_PROXY
+        'working_proxy': working_proxy
     }
 
 def get_cookie_opts() -> Dict[str, Any]:
@@ -118,7 +112,7 @@ def clean_filename(name: str) -> str:
 
 def extract_video_info(url: str, force_refresh: bool = False) -> Dict[str, Any]:
     """
-    Extract video metadata with sub-second cache lookup and high-speed primary proxy routing.
+    Extract video metadata with sub-second cache lookup and high-speed direct Innertube routing.
     """
     clean_url = normalize_youtube_url(url)
     
@@ -129,48 +123,42 @@ def extract_video_info(url: str, force_refresh: bool = False) -> Dict[str, Any]:
             return cached['extracted_data']
 
     cookie_opts = get_cookie_opts()
-    ydl_opts = {
+    base_ydl_opts: Dict[str, Any] = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
         'skip_download': True,
         'socket_timeout': 6,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['visionos']
-            }
-        }
     }
     if cookie_opts:
-        ydl_opts.update(cookie_opts)
+        base_ydl_opts.update(cookie_opts)
 
     info = None
     last_err = None
-    working_proxy = PRIMARY_PROXY
+    working_proxy = None
 
-    # Optimized fast-path: primary proxy with visionos -> fallback to android -> fallback secondary proxy
-    attempts = [
-        {'client': ['visionos'], 'proxy': PRIMARY_PROXY},
-        {'client': ['android'], 'proxy': PRIMARY_PROXY},
-        {'client': ['visionos'], 'proxy': PROXIES_POOL[1]},
-        {'client': ['android', 'ios'], 'proxy': PROXIES_POOL[2]},
-    ]
+    # Ultra-fast pipeline: direct connection first with visionos client, fallback to android, then env proxy if set
+    proxy_attempts = get_proxy_attempts()
+    client_attempts = ['visionos', 'android', 'ios', 'web']
 
-    for att in attempts:
-        run_ydl_opts = dict(ydl_opts)
-        run_ydl_opts['extractor_args'] = {'youtube': {'player_client': att['client']}}
-        if att['proxy']:
-            run_ydl_opts['proxy'] = att['proxy']
-        try:
-            with yt_dlp.YoutubeDL(run_ydl_opts) as ydl:
-                cand = ydl.extract_info(clean_url, download=False)
-                if cand and cand.get('formats'):
-                    info = cand
-                    working_proxy = att['proxy']
-                    break
-        except Exception as e:
-            last_err = e
-            continue
+    for p in proxy_attempts:
+        for client in client_attempts:
+            run_opts = dict(base_ydl_opts)
+            run_opts['extractor_args'] = {'youtube': {'player_client': [client]}}
+            if p:
+                run_opts['proxy'] = p
+            try:
+                with yt_dlp.YoutubeDL(run_opts) as ydl:
+                    cand = ydl.extract_info(clean_url, download=False)
+                    if cand and cand.get('formats'):
+                        info = cand
+                        working_proxy = p
+                        break
+            except Exception as e:
+                last_err = e
+                continue
+        if info:
+            break
 
     if not info:
         err_msg = str(last_err) if last_err else "No video information found."
@@ -354,7 +342,7 @@ def start_download_task(
 ):
     """
     Synchronous worker for downloading and processing with yt-dlp.
-    Fast-tracked with pre-resolved working proxy and instant copy remuxing.
+    Fast-tracked with concurrent fragment streaming and instant -c copy remuxing.
     """
     job = jobs_dict.get(job_id)
     if job is None:
@@ -405,7 +393,7 @@ def start_download_task(
         'quiet': True,
         'no_warnings': True,
         'restrictfilenames': True,
-        'concurrent_fragment_downloads': 10,
+        'concurrent_fragment_downloads': 8,
         'buffersize': 1024 * 1024,
         'http_chunk_size': 10485760,
         'socket_timeout': 10,
@@ -466,11 +454,7 @@ def start_download_task(
                 )
             ydl_opts['merge_output_format'] = 'mp4'
 
-        cached = get_cached_metadata(clean_url)
-        chosen_proxy = cached.get('working_proxy', PRIMARY_PROXY) if cached else PRIMARY_PROXY
-
-        # Fast execution: try pre-verified proxy first
-        proxies_to_attempt = [chosen_proxy] + [p for p in PROXIES_POOL[:2] if p != chosen_proxy]
+        proxies_to_attempt = get_proxy_attempts()
         last_dl_err = None
         download_success = False
 
