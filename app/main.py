@@ -29,7 +29,7 @@ import yt_dlp
 app = FastAPI(
     title="YTCache Unified - Video Downloader & Instant Speech Transcript",
     description="Unified platform for 4K video downloading and instant speech transcription.",
-    version="4.0.0"
+    version="4.3.0-ultra-speed"
 )
 
 # CORS configuration
@@ -132,7 +132,7 @@ async def health_check():
     return {
         "status": "online",
         "service": "YTCache Unified Engine",
-        "version": "4.2.0-seo-ready",
+        "version": "4.3.0-ultra-speed",
         "timestamp": time.time()
     }
 
